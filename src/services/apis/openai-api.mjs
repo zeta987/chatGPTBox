@@ -227,6 +227,12 @@ export async function generateAnswersWithChatgptApiCompat(
         port.onMessage.removeListener(messageListener)
         port.onDisconnect.removeListener(disconnectListener)
         keepAlive(false) // 停止保活
+
+        if (resp.name === 'AbortError') {
+          console.log('Request was aborted, this is normal when switching conversations')
+          return
+        }
+
         if (resp instanceof Error) throw resp
         const error = await resp.json().catch(() => ({}))
         throw new Error(
@@ -235,6 +241,11 @@ export async function generateAnswersWithChatgptApiCompat(
       },
     })
   } catch (error) {
+    if (error.name === 'AbortError') {
+      console.log('Connection was aborted, this is normal when closing the chat')
+      return
+    }
+
     console.error('Error in generateAnswersWithChatgptApiCompat:', error)
     keepAlive(false) // 確保在出錯時也停止保活
     throw error
