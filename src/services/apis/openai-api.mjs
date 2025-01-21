@@ -1,3 +1,5 @@
+/* global chrome */
+
 // api version
 
 import { getUserConfig } from '../../config/index.mjs'
@@ -125,6 +127,8 @@ export async function generateAnswersWithChatgptApiCompat(
   prompt.push({ role: 'user', content: question })
 
   let answer = ''
+  let reasoning = ''
+  let isReasoning = true
   let finished = false
 
   // 添加保活机制
@@ -183,17 +187,29 @@ export async function generateAnswersWithChatgptApiCompat(
           return
         }
 
-        const delta = data.choices[0]?.delta?.content
-        const content = data.choices[0]?.message?.content
-        const text = data.choices[0]?.text
-        if (delta !== undefined) {
-          answer += delta
-        } else if (content) {
-          answer = content
-        } else if (text) {
-          answer += text
+        const delta = data.choices[0]?.delta
+        const reasoningContent = delta?.reasoning_content
+        const content = delta?.content
+
+        if (reasoningContent !== undefined) {
+          if (reasoningContent !== null) {
+            reasoning += reasoningContent
+            answer = `> ${reasoning.split('\n').join('\n> ')}`
+            port.postMessage({ answer: answer, done: false, session: null })
+          }
         }
-        port.postMessage({ answer: answer, done: false, session: null })
+
+        if (content !== undefined) {
+          if (content !== null) {
+            if (isReasoning) {
+              answer = `> ${reasoning.split('\n').join('\n> ')}\n\n${content}`
+              isReasoning = false
+            } else {
+              answer += content
+            }
+            port.postMessage({ answer: answer, done: false, session: null })
+          }
+        }
 
         if (data.choices[0]?.finish_reason) {
           finish()
