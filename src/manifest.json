@@ -10,27 +10,14 @@
     "128": "logo.png"
   },
   "host_permissions": [
-    "https://*.chatgpt.com/*",
-    "https://*.openai.com/*",
-    "https://*.bing.com/*",
-    "https://*.poe.com/*",
-    "https://*.google.com/*",
-    "https://claude.ai/*",
-    "https://*.moonshot.cn/*",
-    "<all_urls>"
+    "https://*.openai.com/*"
   ],
   "permissions": [
-    "cookies",
     "storage",
     "contextMenus",
-    "unlimitedStorage",
     "tabs",
-    "webRequest",
-    "declarativeNetRequestWithHostAccess",
-    "sidePanel"
-  ],
-  "optional_permissions": [
-    "background"
+    "unlimitedStorage",
+    "declarativeNetRequestWithHostAccess"
   ],
   "background": {
     "service_worker": "background.js"
@@ -58,8 +45,7 @@
     {
       "matches": [
         "https://*/*",
-        "http://*/*",
-        "file://*/*"
+        "http://*/*"
       ],
       "js": [
         "shared.js",
@@ -73,11 +59,16 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "logo.png"
+        "logo.png",
+        "content-script.css"
       ],
       "matches": [
         "<all_urls>"
       ]
+    },
+    {
+      "resources": ["IndependentPanel.html"],
+      "matches": ["https://chatgpt.com/*"]
     }
   ],
   "commands": {
@@ -111,5 +102,8 @@
     "closeAllChats": {
       "description": "Close all chats in this page"
     }
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
   }
 }
