@@ -23,6 +23,16 @@ export async function generateAnswersWithClaudeApi(port, question, session) {
   prompt.push({ role: 'user', content: question })
 
   let answer = ''
+  const body = {
+    model,
+    messages: prompt,
+    stream: true,
+    temperature: config.temperature,
+  }
+  if (config.maxResponseTokenLength < 40000) {
+    body.max_tokens = config.maxResponseTokenLength
+  }
+
   await fetchSSE(`${apiUrl}/v1/messages`, {
     method: 'POST',
     signal: controller.signal,
@@ -32,13 +42,7 @@ export async function generateAnswersWithClaudeApi(port, question, session) {
       'x-api-key': config.claudeApiKey,
       'anthropic-dangerous-direct-browser-access': true,
     },
-    body: JSON.stringify({
-      model,
-      messages: prompt,
-      stream: true,
-      max_tokens: config.maxResponseTokenLength,
-      temperature: config.temperature,
-    }),
+    body: JSON.stringify(body),
     onMessage(message) {
       console.debug('sse message', message)
 

@@ -15,7 +15,8 @@ function ApiParams({ config, updateConfig }) {
   return (
     <>
       <label>
-        {t('Max Response Token Length') + `: ${config.maxResponseTokenLength}`}
+        {t('Max Response Token Length') +
+          `: ${config.maxResponseTokenLength === 40000 ? '∞' : config.maxResponseTokenLength}`}
         <input
           type="range"
           min="100"

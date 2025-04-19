@@ -37,6 +37,18 @@ export async function generateAnswersWithGptCompletionApi(port, question, sessio
     console.debug('conversation history', { content: session.conversationRecords })
     port.postMessage({ answer: null, done: true, session: session })
   }
+
+  const body = {
+    prompt: prompt,
+    model,
+    stream: true,
+    temperature: config.temperature,
+    stop: '\nHuman',
+  }
+  if (config.maxResponseTokenLength < 40000) {
+    body.max_tokens = config.maxResponseTokenLength
+  }
+
   await fetchSSE(`${apiUrl}/v1/completions`, {
     method: 'POST',
     signal: controller.signal,
@@ -44,14 +56,7 @@ export async function generateAnswersWithGptCompletionApi(port, question, sessio
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({
-      prompt: prompt,
-      model,
-      stream: true,
-      max_tokens: config.maxResponseTokenLength,
-      temperature: config.temperature,
-      stop: '\nHuman',
-    }),
+    body: JSON.stringify(body),
     onMessage(message) {
       console.debug('sse message', message)
       if (finished) return
@@ -154,6 +159,17 @@ export async function generateAnswersWithChatgptApiCompat(
     keepAlive(false) // 停止保活
   }
 
+  const baseBody = {
+    messages: prompt,
+    model,
+    stream: true,
+    temperature: config.temperature,
+    ...extraBody,
+  }
+  if (config.maxResponseTokenLength < 40000) {
+    baseBody.max_tokens = config.maxResponseTokenLength
+  }
+
   try {
     keepAlive(true) // 開始保活
 
@@ -164,14 +180,7 @@ export async function generateAnswersWithChatgptApiCompat(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        messages: prompt,
-        model,
-        stream: true,
-        max_tokens: config.maxResponseTokenLength,
-        temperature: config.temperature,
-        ...extraBody,
-      }),
+      body: JSON.stringify(baseBody),
       onMessage(message) {
         console.debug('sse message', message)
         if (finished) return

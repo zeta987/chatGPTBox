@@ -23,6 +23,15 @@ export async function generateAnswersWithAzureOpenaiApi(port, question, session)
   prompt.push({ role: 'user', content: question })
 
   let answer = ''
+  const body = {
+    messages: prompt,
+    stream: true,
+    temperature: config.temperature,
+  }
+  if (config.maxResponseTokenLength < 40000) {
+    body.max_tokens = config.maxResponseTokenLength
+  }
+
   await fetchSSE(
     `${config.azureEndpoint.replace(
       /\/$/,
@@ -35,12 +44,7 @@ export async function generateAnswersWithAzureOpenaiApi(port, question, session)
         'Content-Type': 'application/json',
         'api-key': config.azureApiKey,
       },
-      body: JSON.stringify({
-        messages: prompt,
-        stream: true,
-        max_tokens: config.maxResponseTokenLength,
-        temperature: config.temperature,
-      }),
+      body: JSON.stringify(body),
       onMessage(message) {
         console.debug('sse message', message)
         let data

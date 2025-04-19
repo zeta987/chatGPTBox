@@ -44,6 +44,17 @@ export async function generateAnswersWithCustomApi(
     console.debug('conversation history', { content: session.conversationRecords })
     port.postMessage({ answer: null, done: true, session: session })
   }
+
+  const body = {
+    messages: prompt,
+    model: modelName,
+    stream: true,
+    temperature: config.temperature,
+  }
+  if (config.maxResponseTokenLength < 40000) {
+    body.max_tokens = config.maxResponseTokenLength
+  }
+
   await fetchSSE(apiUrl, {
     method: 'POST',
     signal: controller.signal,
@@ -51,13 +62,7 @@ export async function generateAnswersWithCustomApi(
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({
-      messages: prompt,
-      model: modelName,
-      stream: true,
-      max_tokens: config.maxResponseTokenLength,
-      temperature: config.temperature,
-    }),
+    body: JSON.stringify(body),
     onMessage(message) {
       console.debug('sse message', message)
       if (finished) return
