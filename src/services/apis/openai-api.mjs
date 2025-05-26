@@ -131,12 +131,16 @@ export async function generateAnswersWithChatgptApiCompat(
   )
   prompt.push({ role: 'user', content: question })
 
-  let answer = ''
+  let answer = '' // 用於顯示的完整內容（包含思考標記）
+  let actualContent = '' // 用於保存的實際內容（不包含思考標記）
   let reasoning = ''
   let isReasoning = true
   let finished = false
 
-  // 添加保活机制
+  let startTime = Date.now()
+  let lastProgressTime = 0 // 記錄上次發送進度的時間
+
+  // 添加保活機制
   const keepAlive = (() => {
     let interval
     return (state) => {
@@ -153,7 +157,7 @@ export async function generateAnswersWithChatgptApiCompat(
 
   const finish = () => {
     finished = true
-    pushRecord(session, question, answer)
+    pushRecord(session, question, actualContent)
     console.debug('conversation history', { content: session.conversationRecords })
     port.postMessage({ answer: null, done: true, session: session })
     keepAlive(false) // 停止保活
@@ -171,7 +175,8 @@ export async function generateAnswersWithChatgptApiCompat(
   }
 
   try {
-    keepAlive(true) // 開始保活
+    keepAlive(true)
+    startTime = Date.now()
 
     await fetchSSE(`${baseUrl}/chat/completions`, {
       method: 'POST',
@@ -203,20 +208,52 @@ export async function generateAnswersWithChatgptApiCompat(
         if (reasoningContent !== undefined) {
           if (reasoningContent !== null) {
             reasoning += reasoningContent
-            answer = `> ${reasoning.split('\n').join('\n> ')}`
-            port.postMessage({ answer: answer, done: false, session: null })
+            const currentTime = Date.now() - startTime
+
+            if (currentTime - lastProgressTime > 500 || reasoning.length < 100) {
+              lastProgressTime = currentTime
+              port.postMessage({
+                type: 'thinking_update',
+                answer: `> ${reasoning.split('\n').join('\n> ')}`,
+                reasoningContent: reasoning,
+                thinkingTime: currentTime,
+                isThinking: true,
+                done: false,
+                session: null,
+              })
+            }
           }
         }
 
         if (content !== undefined) {
           if (content !== null) {
-            if (isReasoning) {
-              answer = `> ${reasoning.split('\n').join('\n> ')}\n\n${content}`
+            actualContent += content
+            const currentTime = Date.now() - startTime
+
+            if (isReasoning && reasoning) {
+              answer = `> ${reasoning.split('\n').join('\n> ')}\n\n${actualContent}`
+              isReasoning = false
+            } else if (isReasoning && !reasoning) {
+              answer = actualContent
               isReasoning = false
             } else {
-              answer += content
+              if (reasoning) {
+                answer = `> ${reasoning.split('\n').join('\n> ')}\n\n${actualContent}`
+              } else {
+                answer = actualContent
+              }
             }
-            port.postMessage({ answer: answer, done: false, session: null })
+
+            port.postMessage({
+              type: 'content_update',
+              answer: answer,
+              actualContent: actualContent,
+              reasoningContent: reasoning,
+              thinkingTime: currentTime,
+              isThinking: false,
+              done: false,
+              session: null,
+            })
           }
         }
 
