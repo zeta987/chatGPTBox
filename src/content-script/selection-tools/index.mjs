@@ -26,9 +26,15 @@ const createGenPrompt =
       preferredLanguage = await getPreferredLanguage()
     }
 
-    let fullMessage = isTranslation
-      ? `Translate the following into ${preferredLanguage} and only show me the translated content`
-      : message
+    // Always replace ${preferredLanguage} placeholder first
+    let fullMessage = message.replace(/\$\{preferredLanguage\}/g, preferredLanguage)
+
+    // If it's a translation task and the message wasn't a custom one containing the placeholder,
+    // use the standard translation prompt.
+    if (isTranslation && !message.includes('${preferredLanguage}')) {
+      fullMessage = `Translate the following into ${preferredLanguage} and only show me the translated content`
+    }
+
     if (enableBidirectional) {
       fullMessage += `. If it is already in ${preferredLanguage}, translate it into English and only show me the translated content`
     }
@@ -89,7 +95,7 @@ export const config = {
     label: 'Polish',
     genPrompt: createGenPrompt({
       message:
-        'Check the following content for possible diction and grammar problems, and polish it carefully',
+        'As an expert editor, first polish the provided text for native-speaker clarity, conciseness, and coherence, maintaining its original language.\nThen, explain the polished text in ${preferredLanguage}. If the original input text is not in ${preferredLanguage}, this explanation must include a translation of the polished text into ${preferredLanguage}.\nReturn only the polished text, followed by the explanation.',
     }),
   },
   sentiment: {
@@ -105,7 +111,8 @@ export const config = {
     icon: <CardList />,
     label: 'Divide Paragraphs',
     genPrompt: createGenPrompt({
-      message: 'Divide the following into paragraphs that are easy to read and understand',
+      message:
+        'As an expert editor, first divide the provided text into paragraphs that are easy to read and understand, maintaining its original language.\nThen, explain the restructured text in ${preferredLanguage}. If the original input text is not in ${preferredLanguage}, this explanation must include a translation of the restructured text into ${preferredLanguage}.\nReturn only the restructured text, followed by the explanation.',
     }),
   },
   code: {
