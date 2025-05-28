@@ -26,8 +26,20 @@ function App() {
   const [currentSession, setCurrentSession] = useState(null)
   const [renderContent, setRenderContent] = useState(false)
   const currentPort = useRef(null)
+  const latestSession = useRef(null) // 用於追踪最新的 session 狀態
 
-  const setSessionIdSafe = async (sessionId) => {
+  const setSessionIdSafe = async (newSessionId) => {
+    // 在切換對話前，先保存當前對話狀態（使用最新的 session）
+    const sessionToSave = latestSession.current || currentSession
+    if (sessionToSave && sessionId && sessionId !== newSessionId) {
+      try {
+        await updateSession(sessionToSave)
+        console.log('Saved current session before switching:', sessionId)
+      } catch (e) {
+        console.error('Failed to save current session:', e)
+      }
+    }
+
     if (currentPort.current) {
       try {
         currentPort.current.postMessage({ stop: true })
@@ -37,9 +49,16 @@ function App() {
       }
       currentPort.current = null
     }
-    const { session, currentSessions } = await getSession(sessionId)
-    if (session) setSessionId(sessionId)
-    else if (currentSessions.length > 0) setSessionId(currentSessions[0].sessionId)
+
+    const { session, currentSessions } = await getSession(newSessionId)
+    if (session) {
+      setSessionId(newSessionId)
+      // 立即更新 sessions 狀態以保持同步
+      setSessions(currentSessions)
+    } else if (currentSessions.length > 0) {
+      setSessionId(currentSessions[0].sessionId)
+      setSessions(currentSessions)
+    }
   }
 
   useEffect(() => {
@@ -72,11 +91,22 @@ function App() {
     // eslint-disable-next-line
     ;(async () => {
       if (sessions.length > 0) {
-        setCurrentSession((await getSession(sessionId)).session)
-        setRenderContent(false)
-        setTimeout(() => {
-          setRenderContent(true)
-        })
+        const { session } = await getSession(sessionId)
+        if (session) {
+          // 調試日誌
+          console.log('[IndependentPanel] Loading session:', {
+            sessionId: session.sessionId,
+            recordsCount: session.conversationRecords?.length || 0,
+            hasThinkingData: session.conversationRecords?.some((r) => r.thinkingData?.hasReasoning),
+          })
+
+          setCurrentSession(session)
+          latestSession.current = session // 同步更新引用
+          setRenderContent(false)
+          setTimeout(() => {
+            setRenderContent(true)
+          })
+        }
       }
     })()
   }, [sessionId])
@@ -172,9 +202,35 @@ function App() {
                 pageMode={true}
                 onUpdate={(port, session, cData) => {
                   currentPort.current = port
-                  if (cData.length > 0 && cData[cData.length - 1].done) {
-                    updateSession(session).then(setSessions)
+
+                  // 更新當前 session 狀態
+                  if (session) {
                     setCurrentSession(session)
+                    latestSession.current = session // 同時更新引用
+                  }
+
+                  // 儲存邏輯優化：保存在回答完成、有實際內容更新，或思考內容更新時，或發生錯誤時
+                  if (cData.length > 0) {
+                    const lastItem = cData[cData.length - 1]
+                    const isAnswer = lastItem.type === 'answer'
+                    const isError = lastItem.type === 'error'
+                    const hasContent =
+                      isAnswer && lastItem.content && !lastItem.content.includes('gpt-loading')
+                    const hasReasoning =
+                      isAnswer && lastItem.thinkingData && lastItem.thinkingData.hasReasoning
+                    const isDone = lastItem.done
+                    // 當符合條件（完成、實際內容、思考數據或錯誤）時保存
+                    if (isDone || hasContent || hasReasoning || isError) {
+                      updateSession(session)
+                        .then(() => {
+                          console.log('Session updated:', session.sessionId)
+                          // 重新獲取最新的 sessions 列表
+                          getSessions().then(setSessions)
+                        })
+                        .catch((e) => {
+                          console.error('Failed to update session:', e)
+                        })
+                    }
                   }
                 }}
               />

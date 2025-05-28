@@ -19,6 +19,12 @@ function FloatingToolbar(props) {
   const [closeable, setCloseable] = useState(props.closeable)
   const [position, setPosition] = useState(getClientPosition(props.container))
   const [virtualPosition, setVirtualPosition] = useState({ x: 0, y: 0 })
+  const [session, setSession] = useState(props.session) // 添加 session state
+
+  // 當 props.session 更新時，同步更新內部 state
+  useEffect(() => {
+    setSession(props.session)
+  }, [props.session])
   const windowSize = useClampWindowSize([750, 1500], [0, Infinity])
   const config = useConfig(() => {
     setRender(true)
@@ -78,9 +84,20 @@ function FloatingToolbar(props) {
       setCloseable(true)
     }, [])
 
-    const onUpdate = useCallback(() => {
-      updatePosition()
-    }, [position])
+    const onUpdate = useCallback(
+      (port, newSession, conversationItemData) => {
+        updatePosition()
+        // 重要：更新 session 以保持對話歷史
+        if (newSession) {
+          setSession(newSession)
+          // 如果父組件提供了 onUpdate，也調用它
+          if (props.onUpdate) {
+            props.onUpdate(port, newSession, conversationItemData)
+          }
+        }
+      },
+      [position, props.onUpdate],
+    )
 
     if (config.alwaysPinWindow) onDock()
 
@@ -98,7 +115,7 @@ function FloatingToolbar(props) {
           >
             <div className="chatgptbox-container">
               <ConversationCard
-                session={props.session}
+                session={session}
                 question={prompt}
                 draggable={true}
                 closeable={closeable}
@@ -168,6 +185,7 @@ FloatingToolbar.propTypes = {
   closeable: PropTypes.bool,
   dockable: PropTypes.bool,
   prompt: PropTypes.string,
+  onUpdate: PropTypes.func,
 }
 
 export default FloatingToolbar

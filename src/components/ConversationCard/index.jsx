@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react'
 import PropTypes from 'prop-types'
 import Browser from 'webextension-polyfill'
 import InputBox from '../InputBox'
@@ -276,18 +276,56 @@ function ConversationCard(props) {
 
   useLayoutEffect(() => {
     if (session.conversationRecords.length === 0) {
-      if (props.question && triggered)
+      if (props.question && triggered) {
+        // 在網頁滑詞場景中，需要同時創建 question 和 answer 項
         setConversationItemData([
+          new ConversationItemData('question', props.question, true),
           new ConversationItemData(
             'answer',
             `<p class="gpt-loading">${t(`Waiting for response...`)}</p>`,
           ),
         ])
+      }
     } else {
       const ret = []
       for (const record of session.conversationRecords) {
         ret.push(new ConversationItemData('question', record.question, true))
-        ret.push(new ConversationItemData('answer', record.answer, true))
+
+        // 創建答案項目，如果有思考數據則恢復它
+        let answerContent = record.answer // 預設使用 record.answer
+        let answerThinkingData = {
+          reasoningContent: '',
+          actualContent: '',
+          thinkingTime: 0,
+          isThinking: false,
+          hasReasoning: false,
+        }
+
+        if (record.thinkingData && record.thinkingData.hasReasoning) {
+          // 如果有思考數據，恢復完整的思考信息
+          answerThinkingData = {
+            reasoningContent: record.thinkingData.reasoningContent || '',
+            actualContent: record.thinkingData.actualContent || record.answer, // 確保 actualContent 有值
+            thinkingTime: record.thinkingData.thinkingTime || 0,
+            isThinking: false, // 恢復時總是設為 false
+            hasReasoning: true, // 強制設為 true，確保 ThinkingBlock 顯示
+          }
+
+          // 對於有思考數據的項目，使用 actualContent 作為答案內容
+          answerContent = answerThinkingData.actualContent || record.answer
+
+          // 調試日誌
+          console.log('[ConversationCard] Restoring thinking data:', {
+            questionIndex: ret.length / 2,
+            hasReasoning: answerThinkingData.hasReasoning,
+            reasoningContent: answerThinkingData.reasoningContent?.substring(0, 50) + '...',
+            actualContent: answerThinkingData.actualContent?.substring(0, 50) + '...',
+          })
+        }
+
+        // 根據記錄是否為錯誤類型來決定項目類型
+        const itemType = record.isError ? 'error' : 'answer'
+        ret.push(new ConversationItemData(itemType, answerContent, true, answerThinkingData))
       }
       setConversationItemData(ret)
     }
@@ -317,7 +355,12 @@ function ConversationCard(props) {
   useEffect(async () => {
     // when the page is responsive, session may accumulate redundant data and needs to be cleared after remounting and before making a new request
     if (props.question && triggered) {
-      const newSession = initSession({ ...session, question: props.question })
+      // 保留現有的 conversationRecords，只更新 question
+      const newSession = {
+        ...session,
+        question: props.question,
+        updatedAt: new Date().toISOString(),
+      }
       setSession(newSession)
       await postMessage({ session: newSession })
     }
@@ -381,20 +424,26 @@ function ConversationCard(props) {
   const updateAnswer = (value, appended, newType, done = false) => {
     setConversationItemData((old) => {
       const copy = [...old]
-      const index = findLastIndex(copy, (v) => v.type === 'answer' || v.type === 'error')
-      if (index === -1) {
-        // 創建新的答案項目
-        const newItem = new ConversationItemData(newType, value, done)
-        return [...copy, newItem]
-      }
+      const lastItem = copy.length > 0 ? copy[copy.length - 1] : null
 
-      // 更新現有項目
-      copy[index] = new ConversationItemData(
-        newType,
-        appended ? copy[index].content + value : value,
-        done,
-        copy[index].thinkingData, // 保持現有的思考數據
-      )
+      // 判斷是更新現有回答/錯誤，還是附加新回答
+      if (
+        lastItem &&
+        (lastItem.type === 'answer' || lastItem.type === 'error') &&
+        lastItem.type !== 'question'
+      ) {
+        // 如果最後一項是 answer 或 error，則更新它
+        copy[copy.length - 1] = new ConversationItemData(
+          newType,
+          appended ? lastItem.content + value : value,
+          done,
+          lastItem.thinkingData, // 保持現有的思考數據
+        )
+      } else {
+        // 否則（例如最後一項是 question，或者列表為空），附加新的回答項
+        const newItem = new ConversationItemData(newType, value, done)
+        copy.push(newItem)
+      }
       return copy
     })
   }
@@ -412,54 +461,61 @@ function ConversationCard(props) {
       setIsReady(true)
     }
     if (msg.error) {
+      let formattedError = msg.error
+
       switch (msg.error) {
         case 'UNAUTHORIZED':
-          updateAnswer(
+          formattedError =
             `${t('UNAUTHORIZED')}<br>${t('Please login at https://chatgpt.com first')}${
               isSafari() ? `<br>${t('Then open https://chatgpt.com/api/auth/session')}` : ''
             }<br>${t('And refresh this page or type you question again')}` +
-              `<br><br>${t(
-                'Consider creating an api key at https://platform.openai.com/account/api-keys',
-              )}`,
-            false,
-            'error',
-          )
+            `<br><br>${t(
+              'Consider creating an api key at https://platform.openai.com/account/api-keys',
+            )}`
           break
         case 'CLOUDFLARE':
-          updateAnswer(
+          formattedError =
             `${t('OpenAI Security Check Required')}<br>${
               isSafari()
                 ? t('Please open https://chatgpt.com/api/auth/session')
                 : t('Please open https://chatgpt.com')
             }<br>${t('And refresh this page or type you question again')}` +
-              `<br><br>${t(
-                'Consider creating an api key at https://platform.openai.com/account/api-keys',
-              )}`,
-            false,
-            'error',
-          )
+            `<br><br>${t(
+              'Consider creating an api key at https://platform.openai.com/account/api-keys',
+            )}`
           break
-        default: {
-          let formattedError = msg.error
+        default:
           if (typeof msg.error === 'string' && msg.error.trimStart().startsWith('{'))
             try {
               formattedError = JSON.stringify(JSON.parse(msg.error), null, 2)
             } catch (e) {
               /* empty */
             }
-
-          let lastItem
-          if (conversationItemData.length > 0)
-            lastItem = conversationItemData[conversationItemData.length - 1]
-          if (lastItem && (lastItem.content.includes('gpt-loading') || lastItem.type === 'error'))
-            updateAnswer(t(formattedError), false, 'error')
-          else
-            setConversationItemData([
-              ...conversationItemData,
-              new ConversationItemData('error', t(formattedError)),
-            ])
           break
-        }
+      }
+
+      // 統一錯誤處理邏輯
+      const errorMessage = t(formattedError)
+
+      // 查找最後一個答案或錯誤項目
+      const lastItemIndex = findLastIndex(
+        conversationItemData,
+        (v) => v.type === 'answer' || v.type === 'error',
+      )
+
+      if (
+        lastItemIndex !== -1 &&
+        (conversationItemData[lastItemIndex].content.includes('gpt-loading') ||
+          conversationItemData[lastItemIndex].type === 'error')
+      ) {
+        // 如果最後一項是加載中或錯誤，直接替換
+        updateAnswer(errorMessage, false, 'error', true)
+      } else {
+        // 否則添加新的錯誤項目
+        setConversationItemData((old) => [
+          ...old,
+          new ConversationItemData('error', errorMessage, true),
+        ])
       }
       setIsReady(true)
     }
@@ -564,28 +620,89 @@ function ConversationCard(props) {
     }
   }, [port])
 
-  const getRetryFn = (session) => async () => {
-    updateAnswer(`<p class="gpt-loading">${t('Waiting for response...')}</p>`, false, 'answer')
-    setIsReady(false)
+  const isRetryingRef = useRef(false) // 防止重複重試的標誌
 
-    // 創建新的 session 副本以避免直接修改原始 session
-    const newSession = { ...session, isRetry: true }
+  // Create a stable retry function using useRef to access latest state
+  const conversationItemDataRef = useRef(conversationItemData)
+  conversationItemDataRef.current = conversationItemData
 
-    // 簡化重試邏輯：直接移除最後一條對話記錄（如果存在）
-    if (newSession.conversationRecords.length > 0) {
-      newSession.conversationRecords = newSession.conversationRecords.slice(0, -1)
+  const retryFn = useCallback(async () => {
+    // 防止重複點擊
+    if (isRetryingRef.current) {
+      console.log('[Retry] Already retrying, skipping...')
+      return
     }
 
-    setSession(newSession)
     try {
-      await postMessage({ stop: true })
-      await postMessage({ session: newSession })
-    } catch (e) {
-      updateAnswer(e, false, 'error')
-    }
-  }
+      isRetryingRef.current = true
 
-  const retryFn = useMemo(() => getRetryFn(session), [session])
+      // 使用 ref 獲取最新的 conversationItemData
+      const currentData = conversationItemDataRef.current
+
+      // 獲取最後一個問題內容（在修改數據之前）
+      let lastQuestion = ''
+      const lastQuestionIndex = findLastIndex(currentData, (v) => v.type === 'question')
+      if (lastQuestionIndex !== -1) {
+        lastQuestion = currentData[lastQuestionIndex].content
+      }
+
+      // 重要：在移除錯誤項之前，先同步當前狀態以保存所有已完成的對話
+      const syncedSessionBeforeRemove = syncConversationDataToSession(currentData, session)
+
+      // 現在移除最後一個錯誤或答案項目
+      let itemsToUpdate = [...currentData]
+      const lastIndex = findLastIndex(
+        itemsToUpdate,
+        (v) => v.type === 'answer' || v.type === 'error',
+      )
+      if (lastIndex !== -1) {
+        itemsToUpdate.splice(lastIndex, 1) // 移除錯誤或未完成的答案項
+        // 更新實際的 conversationItemData，移除錯誤項目
+        setConversationItemData(itemsToUpdate)
+      }
+
+      // 添加 loading 狀態到 UI（這會替換當前的錯誤項目）
+      updateAnswer(`<p class="gpt-loading">${t('Waiting for response...')}</p>`, false, 'answer')
+      setIsReady(false)
+
+      // 調試日誌
+      console.log('[Retry] Session state:', {
+        sessionFromProps_records: session?.conversationRecords?.length || 0,
+        syncedSession_records: syncedSessionBeforeRemove?.conversationRecords?.length || 0,
+        originalItemsLength: currentData.length,
+        lastQuestion: lastQuestion,
+        modelName: syncedSessionBeforeRemove?.modelName || session?.modelName,
+        apiMode: syncedSessionBeforeRemove?.apiMode || session?.apiMode,
+      })
+
+      // 額外調試：打印完整的 conversationRecords
+      console.log('[Retry] conversationRecords:', syncedSessionBeforeRemove?.conversationRecords)
+
+      // 使用同步後的 conversationRecords，確保包含最新的對話歷史
+      let sessionForRequest = {
+        ...syncedSessionBeforeRemove,
+        question: lastQuestion,
+        isRetry: true,
+        conversationRecords:
+          syncedSessionBeforeRemove.conversationRecords || session.conversationRecords || [],
+      }
+
+      // 更新父組件的 session 狀態以同步 UI
+      setSession(sessionForRequest)
+
+      try {
+        await postMessage({ stop: true })
+        await postMessage({ session: sessionForRequest })
+      } catch (e) {
+        updateAnswer(e, false, 'error')
+      }
+    } finally {
+      // 重置標誌，允許下次重試
+      setTimeout(() => {
+        isRetryingRef.current = false
+      }, 1000) // 1秒後允許再次重試
+    }
+  }, [session, t, updateAnswer, setIsReady, setSession, postMessage])
 
   // 修改訊息處理邏輯
   const handleMessage = (msg) => {
@@ -617,6 +734,7 @@ function ConversationCard(props) {
         actualContent: msg.actualContent,
         thinkingTime: msg.thinkingTime,
         isThinking: msg.isThinking,
+        // Ensure hasReasoning is true if there's reasoningContent, otherwise preserve existing or default to false
         hasReasoning: !!msg.reasoningContent,
       })
       // 如果有實際內容，更新顯示的答案內容
@@ -646,16 +764,31 @@ function ConversationCard(props) {
           /* empty */
         }
 
-      let lastItem
-      if (conversationItemData.length > 0)
-        lastItem = conversationItemData[conversationItemData.length - 1]
-      if (lastItem && (lastItem.content.includes('gpt-loading') || lastItem.type === 'error'))
-        updateAnswer(t(formattedError), false, 'error', true)
-      else
-        setConversationItemData([
-          ...conversationItemData,
-          new ConversationItemData('error', t(formattedError), true),
+      // 統一錯誤處理邏輯
+      const errorMessage = t(formattedError)
+
+      // 查找最後一個答案或錯誤項目
+      const lastItemIndex = findLastIndex(
+        conversationItemData,
+        (v) => v.type === 'answer' || v.type === 'error',
+      )
+
+      if (
+        lastItemIndex !== -1 &&
+        (conversationItemData[lastItemIndex].content.includes('gpt-loading') ||
+          conversationItemData[lastItemIndex].type === 'error')
+      ) {
+        // 如果最後一項是加載中或錯誤，直接替換
+        updateAnswer(errorMessage, false, 'error', true)
+      } else {
+        // 否則添加新的錯誤項目
+        setConversationItemData((old) => [
+          ...old,
+          new ConversationItemData('error', errorMessage, true),
         ])
+      }
+      // 錯誤發生時必須設置 isReady 為 true，讓用戶可以重試或發送新消息
+      setIsReady(true)
     }
 
     // 統一處理 done 狀態
@@ -671,25 +804,166 @@ function ConversationCard(props) {
       const index = findLastIndex(copy, (v) => v.type === 'answer')
       if (index === -1) {
         // 如果沒有找到答案項目，創建一個新的
+        const initialHasReasoning =
+          (newData.reasoningContent && newData.reasoningContent.trim() !== '') ||
+          (typeof newData.hasReasoning === 'boolean' ? newData.hasReasoning : false)
         const newItem = new ConversationItemData('answer', '', false, {
           reasoningContent: '',
           actualContent: '',
           thinkingTime: 0,
           isThinking: false,
-          hasReasoning: false,
-          ...newData,
+          hasReasoning: initialHasReasoning, // Initialize correctly
+          ...newData, // Spread newData after default hasReasoning
         })
         return [...copy, newItem]
       }
 
       // 更新現有項目的思考數據
+      const existingThinkingData = copy[index].thinkingData || {
+        reasoningContent: '',
+        actualContent: '',
+        thinkingTime: 0,
+        isThinking: false,
+        hasReasoning: false,
+      }
+
+      // Determine the new hasReasoning state with robust stickiness
+      let stickyHasReasoning = existingThinkingData.hasReasoning
+      if (newData.reasoningContent && newData.reasoningContent.trim() !== '') {
+        stickyHasReasoning = true // If new data provides reasoning content
+      }
+      if (typeof newData.hasReasoning === 'boolean') {
+        // If newData explicitly provides hasReasoning, OR it with current sticky state.
+        // This ensures if newData.hasReasoning is true, it makes/keeps stickyHasReasoning true.
+        stickyHasReasoning = stickyHasReasoning || newData.hasReasoning
+      }
+
       copy[index].thinkingData = {
-        ...copy[index].thinkingData,
-        ...newData,
+        ...existingThinkingData, // Spread existing first to maintain unprovided fields
+        ...newData, // Then spread new data, which might overwrite some fields
+        hasReasoning: stickyHasReasoning, // Finally, apply the calculated sticky hasReasoning
       }
       return copy
     })
   }
+
+  // 新增：將 conversationItemData 同步到 session.conversationRecords
+  const syncConversationDataToSession = (itemData, currentSession) => {
+    const conversationRecords = []
+
+    console.log('[syncConversationDataToSession] Input:', {
+      itemDataLength: itemData.length,
+      itemDataTypes: itemData.map((item) => ({ type: item.type, done: item.done })),
+      currentSessionRecords: currentSession?.conversationRecords?.length || 0,
+    })
+
+    for (let i = 0; i < itemData.length; i += 2) {
+      const questionItem = itemData[i]
+      const answerItem = itemData[i + 1]
+
+      // 確保有問題和答案配對
+      if (
+        questionItem &&
+        questionItem.type === 'question' &&
+        answerItem &&
+        (answerItem.type === 'answer' || answerItem.type === 'error')
+      ) {
+        // 獲取答案內容，優先使用 actualContent
+        let answerContent = ''
+        if (
+          answerItem.type === 'answer' &&
+          answerItem.thinkingData?.actualContent &&
+          answerItem.thinkingData.actualContent.trim()
+        ) {
+          answerContent = answerItem.thinkingData.actualContent
+        } else if (
+          answerItem.type === 'answer' && // Ensure it's an actual answer, not an error message
+          answerItem.content &&
+          !answerItem.content.includes('gpt-loading') &&
+          answerItem.content.trim()
+        ) {
+          answerContent = answerItem.content
+        }
+
+        // 添加到記錄中的條件：
+        // 1. 答案成功完成（type === 'answer' 且 done === true）
+        // 2. 或者是錯誤但前面還沒有這個問題的記錄（為了保留上下文）
+        // 3. 或者有思考數據（即使答案未完成，也要保存思考進度）
+        // 4. 或者有答案內容但還未完成（保留進行中的對話）
+        const shouldAddRecord =
+          (answerItem.type === 'answer' && answerContent && answerItem.done) ||
+          (answerItem.type === 'error' &&
+            !conversationRecords.some((r) => r.question === questionItem.content)) ||
+          (answerItem.type === 'answer' &&
+            answerItem.thinkingData &&
+            answerItem.thinkingData.hasReasoning) ||
+          (answerItem.type === 'answer' &&
+            answerContent &&
+            !answerItem.done &&
+            !conversationRecords.some((r) => r.question === questionItem.content))
+
+        if (shouldAddRecord) {
+          const record = {
+            question: questionItem.content,
+            answer: answerContent || '', // 錯誤情況下可能沒有答案內容
+          }
+
+          // 保存思考數據（如果存在）- 不論是 answer 還是 error 類型
+          if (answerItem.thinkingData && answerItem.thinkingData.hasReasoning) {
+            record.thinkingData = {
+              reasoningContent: answerItem.thinkingData.reasoningContent || '',
+              actualContent: answerItem.thinkingData.actualContent || answerItem.content || '', // Fallback if actualContent is empty
+              thinkingTime: answerItem.thinkingData.thinkingTime || 0,
+              hasReasoning: true, // When saving, if we have thinkingData, hasReasoning MUST be true
+              isThinking: false, // 保存時總是設為 false
+            }
+            // 如果有思考數據但 answer 為空，使用 actualContent
+            if (!record.answer && record.thinkingData.actualContent) {
+              record.answer = record.thinkingData.actualContent
+            }
+
+            // 調試日誌
+            console.log('[syncConversationDataToSession] Saving thinking data:', {
+              questionIndex: conversationRecords.length,
+              hasReasoning: record.thinkingData.hasReasoning,
+              reasoningContent: record.thinkingData.reasoningContent?.substring(0, 50) + '...',
+              actualContent: record.thinkingData.actualContent?.substring(0, 50) + '...',
+            })
+          }
+
+          // 如果是錯誤類型，標記它
+          if (answerItem.type === 'error') {
+            record.isError = true
+          }
+
+          conversationRecords.push(record)
+        }
+      }
+    }
+
+    return {
+      ...currentSession,
+      conversationRecords,
+    }
+  }
+
+  // 在 conversationItemData 更新時同步到 session
+  useEffect(() => {
+    if (conversationItemData.length > 0) {
+      const syncedSession = syncConversationDataToSession(conversationItemData, session)
+      // 只有在 conversationRecords 真的發生變化時才更新
+      if (
+        JSON.stringify(syncedSession.conversationRecords) !==
+        JSON.stringify(session.conversationRecords)
+      ) {
+        setSession(syncedSession)
+        // 對於 FloatingToolbar 場景，確保更新傳遞給父組件
+        if (props.onUpdate) {
+          props.onUpdate(port, syncedSession, conversationItemData)
+        }
+      }
+    }
+  }, [conversationItemData])
 
   return (
     <div className="gpt-inner">
@@ -752,9 +1026,12 @@ function ConversationCard(props) {
                   config.customModelName,
                 ),
               }
-              if (config.autoRegenAfterSwitchModel && conversationItemData.length > 0)
-                getRetryFn(newSession)()
-              else setSession(newSession)
+              if (config.autoRegenAfterSwitchModel && conversationItemData.length > 0) {
+                setSession(newSession)
+                retryFn()
+              } else {
+                setSession(newSession)
+              }
             }}
           >
             {apiModes.map((apiMode, index) => {
@@ -963,7 +1240,9 @@ function ConversationCard(props) {
                 })()}
               </div>
             )}
-            {data.type === 'error' && <ConversationItem type="error" content={data.content} />}
+            {data.type === 'error' && (
+              <ConversationItem type="error" content={data.content} onRetry={retryFn} />
+            )}
           </div>
         ))}
       </div>
