@@ -54,8 +54,10 @@ export default {
       subtitleContent = replaceHtmlEntities(subtitleContent)
 
       return await cropText(
-        `Provide a structured summary of the following video in markdown format, focusing on key takeaways and crucial information, and ensuring to include the video title. The summary should be easy to read and concise, yet comprehensive.` +
-          `The video title is "${title}". The subtitle content is as follows:\n${subtitleContent}`,
+        `You are an expert video summarizer. Create a comprehensive summary of the following YouTube video in markdown format, ` +
+          `highlighting key takeaways, crucial information, and main topics. Include the video title.\n` +
+          `Video Title: "${title}"\n` +
+          `Subtitle content:\n${subtitleContent}`,
       )
     } catch (e) {
       console.log(e)

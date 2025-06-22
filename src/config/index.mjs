@@ -57,6 +57,9 @@ export const chatgptApiModelKeys = [
   'chatgptApi4_128k_preview',
   'chatgptApi4_128k_1106_preview',
   'chatgptApi4_128k_0125_preview',
+  'chatgptApi4_1',
+  'chatgptApi4_1_mini',
+  'chatgptApi4_1_nano',
 ]
 export const customApiModelKeys = ['customModel']
 export const ollamaApiModelKeys = ['ollamaModel']
@@ -69,6 +72,10 @@ export const claudeApiModelKeys = [
   'claude3SonnetApi',
   'claude3OpusApi',
   'claude35SonnetApi',
+  'claude35HaikuApi',
+  'claude37SonnetApi',
+  'claudeOpus4Api',
+  'claudeSonnet4Api',
 ]
 export const chatglmApiModelKeys = ['chatglmTurbo', 'chatglm4', 'chatglmEmohaa', 'chatglmCharGLM3']
 export const githubThirdPartyApiModelKeys = ['waylaidwandererApi']
@@ -198,6 +205,10 @@ export const Models = {
   },
   chatgptApi4oLatest: { value: 'chatgpt-4o-latest', desc: 'ChatGPT (ChatGPT-4o latest)' },
 
+  chatgptApi4_1: { value: 'gpt-4.1', desc: 'ChatGPT (GPT-4.1)' },
+  chatgptApi4_1_mini: { value: 'gpt-4.1-mini', desc: 'ChatGPT (GPT-4.1 mini)' },
+  chatgptApi4_1_nano: { value: 'gpt-4.1-nano', desc: 'ChatGPT (GPT-4.1 nano)' },
+
   claude2WebFree: { value: '', desc: 'Claude.ai (Web)' },
   claude12Api: { value: 'claude-instant-1.2', desc: 'Claude.ai (API, Claude Instant 1.2)' },
   claude2Api: { value: 'claude-2.0', desc: 'Claude.ai (API, Claude 2)' },
@@ -209,8 +220,24 @@ export const Models = {
   claude3SonnetApi: { value: 'claude-3-sonnet-20240229', desc: 'Claude.ai (API, Claude 3 Sonnet)' },
   claude3OpusApi: { value: 'claude-3-opus-20240229', desc: 'Claude.ai (API, Claude 3 Opus)' },
   claude35SonnetApi: {
-    value: 'claude-3-5-sonnet-20240620',
+    value: 'claude-3-5-sonnet-20241022',
     desc: 'Claude.ai (API, Claude 3.5 Sonnet)',
+  },
+  claude35HaikuApi: {
+    value: 'claude-3-5-haiku-20241022',
+    desc: 'Claude.ai (API, Claude 3.5 Haiku)',
+  },
+  claude37SonnetApi: {
+    value: 'claude-3-7-sonnet-20250219',
+    desc: 'Claude.ai (API, Claude 3.7 Sonnet)',
+  },
+  claudeOpus4Api: {
+    value: 'claude-opus-4-20250514',
+    desc: 'Claude.ai (API, Claude Opus 4)',
+  },
+  claudeSonnet4Api: {
+    value: 'claude-sonnet-4-20250514',
+    desc: 'Claude.ai (API, Claude Sonnet 4)',
   },
 
   bingFree4: { value: '', desc: 'Bing (Web, GPT-4)' },

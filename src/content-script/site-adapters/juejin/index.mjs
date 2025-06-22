@@ -21,13 +21,12 @@ export default {
           comment += `answer${i}: ${comment[i - 1].textContent}|`
         }
         return await cropText(
-          `以下是一篇文章,标题是:"${title}",作者是:"${author}",内容是:\n"${description}".各个评论如下:\n${comment}.请以如下格式输出你的回答：
-          {文章摘要和文章作者}
-          ======
-          {文章总结和对文章的看法}
-          ======
-          {对评论的总结}
-          `,
+          `You are an expert content analyst and summarizer. ` +
+            `Please analyze the following Juejin article and its comments. Provide a summary of the article (including author), your opinion on it, and a summary of the comments.\n` +
+            `Article Title: "${title}"\n` +
+            `Author: "${author}"\n` +
+            `Content:\n"${description}"\n\n` +
+            `Selected comments:\n${comment}`,
         )
       }
     } catch (e) {
