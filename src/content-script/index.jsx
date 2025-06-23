@@ -155,27 +155,23 @@ async function getInput(inputQuery) {
 let toolbarContainer
 let currentToolbarSession = null // 保存當前 FloatingToolbar 的 session
 
-const deleteToolbar = (clearSession = false) => {
+const deleteToolbar = () => {
   if (toolbarContainer && toolbarContainer.className === 'chatgptbox-toolbar-container')
     toolbarContainer.remove()
-  // 可選擇性地清除 session（例如當用戶明確想要開始新對話時）
-  if (clearSession) {
-    currentToolbarSession = null
-  }
+  // 清除 session，確保下次劃詞時創建新的對話
+  currentToolbarSession = null
 }
 
 const createSelectionTools = async (toolbarContainer, selection) => {
   toolbarContainer.className = 'chatgptbox-toolbar-container'
   const userConfig = await getUserConfig()
 
-  // 如果沒有當前 session，創建新的；否則使用現有的
-  if (!currentToolbarSession) {
-    currentToolbarSession = initSession({
-      modelName: userConfig.modelName,
-      apiMode: userConfig.apiMode,
-      extraCustomModelName: userConfig.customModelName,
-    })
-  }
+  // 每次創建新的劃詞工具時都創建新的 session，確保對話上下文獨立
+  currentToolbarSession = initSession({
+    modelName: userConfig.modelName,
+    apiMode: userConfig.apiMode,
+    extraCustomModelName: userConfig.customModelName,
+  })
 
   render(
     <FloatingToolbar

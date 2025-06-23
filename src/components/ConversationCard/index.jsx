@@ -68,11 +68,19 @@ const ThinkingBlock = memo(({ thinkingData }) => {
   const [collapsed, setCollapsed] = useState(true) // 預設收納
   const [copied, setCopied] = useState(false)
   const [currentThinkingTime, setCurrentThinkingTime] = useState(thinkingData.thinkingTime)
+  const [userInteracted, setUserInteracted] = useState(false) // 追蹤用戶是否手動操作過
+
+  // 記錄思考結束時的最終時間
+  const finalThinkingTimeRef = useRef(null)
 
   // 實時更新思考時間 - 優化計時器邏輯
   useEffect(() => {
     let interval = null
+
     if (thinkingData.isThinking) {
+      // 思考開始，清除之前的最終時間記錄
+      finalThinkingTimeRef.current = null
+
       // 使用後端傳來的時間作為基準，前端只做微調
       const baseTime = thinkingData.thinkingTime
       const startTime = Date.now()
@@ -83,14 +91,48 @@ const ThinkingBlock = memo(({ thinkingData }) => {
         setCurrentThinkingTime(baseTime + frontendElapsed)
       }, 100)
     } else {
-      // 思考結束時使用後端的最終時間
-      setCurrentThinkingTime(thinkingData.thinkingTime)
+      // 思考結束
+      if (thinkingData.thinkingTime > 0 && finalThinkingTimeRef.current === null) {
+        // 第一次收到 isThinking: false，記錄最終時間
+        finalThinkingTimeRef.current = thinkingData.thinkingTime
+        setCurrentThinkingTime(thinkingData.thinkingTime)
+      } else if (finalThinkingTimeRef.current !== null) {
+        // 已經記錄了最終時間，使用記錄的時間（不再更新）
+        setCurrentThinkingTime(finalThinkingTimeRef.current)
+      }
     }
 
     return () => {
       if (interval) {
         clearInterval(interval)
       }
+    }
+  }, [thinkingData.isThinking, thinkingData.thinkingTime])
+
+  // 自動展開/收納邏輯
+  useEffect(() => {
+    // 如果用戶手動操作過，暫時不執行自動行為
+    if (userInteracted) {
+      return
+    }
+
+    // 當開始思考且有思考內容時，自動展開
+    if (thinkingData.isThinking && thinkingData.hasReasoning && collapsed) {
+      setCollapsed(false)
+    }
+    // 當思考結束時，立即自動收納
+    else if (!thinkingData.isThinking && thinkingData.hasReasoning && !collapsed) {
+      setCollapsed(true)
+    }
+  }, [thinkingData.isThinking, thinkingData.hasReasoning, collapsed, userInteracted])
+
+  // 當新的問題開始時，重置用戶交互狀態和最終時間記錄
+  useEffect(() => {
+    if (thinkingData.isThinking && thinkingData.thinkingTime < 1000) {
+      // 思考剛開始（時間小於1秒），重置用戶交互狀態
+      setUserInteracted(false)
+      // 重置最終時間記錄
+      finalThinkingTimeRef.current = null
     }
   }, [thinkingData.isThinking, thinkingData.thinkingTime])
 
@@ -138,7 +180,10 @@ const ThinkingBlock = memo(({ thinkingData }) => {
           borderBottom: collapsed ? 'none' : '1px solid rgb(86, 88, 105)',
           transition: 'background-color 0.2s',
         }}
-        onClick={() => setCollapsed(!collapsed)}
+        onClick={() => {
+          setCollapsed(!collapsed)
+          setUserInteracted(true) // 標記用戶手動操作
+        }}
         onMouseEnter={(e) => (e.target.style.backgroundColor = 'rgb(74, 75, 89)')}
         onMouseLeave={(e) => (e.target.style.backgroundColor = 'rgb(64, 65, 79)')}
       >
@@ -225,7 +270,15 @@ const ThinkingBlock = memo(({ thinkingData }) => {
       </div>
 
       {/* 思考內容 */}
-      {!collapsed && (
+      <div
+        className="thinking-block-content-wrapper"
+        style={{
+          maxHeight: collapsed ? '0' : '60vh', // 使用視窗高度的 60%
+          opacity: collapsed ? '0' : '1',
+          overflow: collapsed ? 'hidden' : 'auto', // 展開時允許滾動
+          transition: 'max-height 0.3s ease-in-out, opacity 0.3s ease-in-out',
+        }}
+      >
         <div
           style={{
             padding: '12px',
@@ -233,14 +286,13 @@ const ThinkingBlock = memo(({ thinkingData }) => {
             fontSize: '16px', // 再增大字體
             lineHeight: '1.6',
             color: '#ffffff', // 改為白色
-            maxHeight: '200px',
             overflowY: 'auto',
             borderTop: '1px solid rgb(86, 88, 105)',
           }}
         >
           <MarkdownRender>{thinkingData.reasoningContent}</MarkdownRender>
         </div>
-      )}
+      </div>
     </div>
   )
 })
@@ -646,10 +698,7 @@ function ConversationCard(props) {
         lastQuestion = currentData[lastQuestionIndex].content
       }
 
-      // 重要：在移除錯誤項之前，先同步當前狀態以保存所有已完成的對話
-      const syncedSessionBeforeRemove = syncConversationDataToSession(currentData, session)
-
-      // 現在移除最後一個錯誤或答案項目
+      // 先移除最後一個錯誤或答案項目
       let itemsToUpdate = [...currentData]
       const lastIndex = findLastIndex(
         itemsToUpdate,
@@ -661,30 +710,47 @@ function ConversationCard(props) {
         setConversationItemData(itemsToUpdate)
       }
 
+      // 判斷是否為首次對話（只有一個問題）
+      const isFirstConversation = itemsToUpdate.length <= 1
+
+      // 在移除錯誤項之後，同步對話記錄
+      let syncedSession
+      if (isFirstConversation) {
+        // 首次對話重試：創建一個空的對話記錄
+        syncedSession = {
+          ...session,
+          conversationRecords: [], // 清空上下文
+        }
+      } else {
+        // 多輪對話重試：使用已移除最後答案的數據進行同步
+        syncedSession = syncConversationDataToSession(itemsToUpdate, session)
+      }
+
       // 添加 loading 狀態到 UI（這會替換當前的錯誤項目）
       updateAnswer(`<p class="gpt-loading">${t('Waiting for response...')}</p>`, false, 'answer')
       setIsReady(false)
 
       // 調試日誌
       console.log('[Retry] Session state:', {
+        isFirstConversation: isFirstConversation,
         sessionFromProps_records: session?.conversationRecords?.length || 0,
-        syncedSession_records: syncedSessionBeforeRemove?.conversationRecords?.length || 0,
+        syncedSession_records: syncedSession?.conversationRecords?.length || 0,
         originalItemsLength: currentData.length,
+        itemsAfterRemove: itemsToUpdate.length,
         lastQuestion: lastQuestion,
-        modelName: syncedSessionBeforeRemove?.modelName || session?.modelName,
-        apiMode: syncedSessionBeforeRemove?.apiMode || session?.apiMode,
+        modelName: syncedSession?.modelName || session?.modelName,
+        apiMode: syncedSession?.apiMode || session?.apiMode,
       })
 
       // 額外調試：打印完整的 conversationRecords
-      console.log('[Retry] conversationRecords:', syncedSessionBeforeRemove?.conversationRecords)
+      console.log('[Retry] conversationRecords:', syncedSession?.conversationRecords)
 
-      // 使用同步後的 conversationRecords，確保包含最新的對話歷史
+      // 使用同步後的 conversationRecords
       let sessionForRequest = {
-        ...syncedSessionBeforeRemove,
+        ...syncedSession,
         question: lastQuestion,
         isRetry: true,
-        conversationRecords:
-          syncedSessionBeforeRemove.conversationRecords || session.conversationRecords || [],
+        conversationRecords: syncedSession.conversationRecords || [],
       }
 
       // 更新父組件的 session 狀態以同步 UI
