@@ -1421,6 +1421,44 @@
   }
 }
 
+// 思考中的脈動動畫
+@keyframes thinking-pulse {
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+// 深度思考區塊的自定義滾動條樣式
+.thinking-block-content-wrapper {
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: rgb(52, 53, 65);
+    border-radius: 3px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: rgb(86, 88, 105);
+    border-radius: 3px;
+
+    &:hover {
+      background: rgb(106, 108, 125);
+    }
+  }
+
+  // Firefox 滾動條樣式
+  scrollbar-width: thin;
+  scrollbar-color: rgb(86, 88, 105) rgb(52, 53, 65);
+}
+
 .chatgptbox-selection-toolbar {
   display: flex;
   align-items: center;
