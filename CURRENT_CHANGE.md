@@ -1,45 +1,68 @@
-Long time no see — ChatGPTBox is back! Nearly every feature that had broken due to page updates or API changes has been fixed, and we’ve also introduced some new features.
+Long time no see — here is another maintenance and feature release for ChatGPTBox.
 
-Over the past year the LLM landscape has shifted dramatically, and the key players are now fairly clear. Regarding ChatGPTBox’s free web APIs, some providers are still actively trying to block reverse-engineering, while others remain open. At the moment, ChatGPT, Claude, and Kimi are still open, so we’ll keep maintaining the related web free APIs. The web APIs for Bing and Gemini, however, will no longer be supported; if you need some reverse-engineering web apis, please check out the work of this organization: https://github.com/LLM-Red-Team.
+This release continues maintaining the current ChatGPTBox codebase while the WXT rewrite is still in progress. Since v2.5.9, this version focuses on new model support, a more flexible OpenAI-compatible provider system, reliability fixes, security hardening, and a much stronger build/test foundation.
 
-As OpenRouter has consistently offered stable and affordable APIs, we’ve now added direct option support for it — no need to rely on custom mode and manually fill in the API URL.
+Existing custom API modes and API keys are migrated automatically, with legacy fields kept in sync for backward compatibility.
 
-During this period, countless AI projects have exploded onto the scene and just as many have quietly disappeared. I’ve been tied up with various non-public projects and have neglected ChatGPTBox, while also pondering how to keep it vibrant.
-
-I have to admit that when ChatGPTBox was first created, many decisions and code designs were rather hasty and not very modern. Without much forethought, I made choices that now make it inconvenient to add new features.
-
-I’m currently rewriting ChatGPTBox from scratch using the WXT framework while ensuring full backward compatibility with old data. This will take a considerable amount of time, but I’ll keep pushing forward. I also have some commercialization ideas for ChatGPTBox; of course only server-related features would be charged, while all web APIs and user Api Key features will remain completely free, and the project will stay open-source under the MIT license.
-
-As I’m simultaneously in charge of several other non-public projects, I can’t promise when the rewrite will be finished, but I’ll keep making steady progress. In the meantime, I’ll continue to fix major issues in the current version of ChatGPTBox.
+> Developer note: the minimum Node.js version for development and builds is now **Node.js 22+**. This does not affect normal browser-extension users.
 
 ## Changes
 
 ### Features
 
-- add support for openRouter, AI/ML and DeepSeek api (previously required filling in the URL via the custom model option)
-- a new option has been added to the general settings to disable cropText, ensuring the full input tokens are always passed. This can improve summarization on sites like YouTube, but note that you should only disable cropText when using a model with a sufficiently long context.
-- <img width="300" src="https://github.com/user-attachments/assets/455931d6-8a73-4cdf-88a6-d4dcff53ecd7"/>
-- reasoning model renderer support
-- <img width="420" src="https://github.com/user-attachments/assets/1951cc7e-d12a-4cc2-8f7f-826603bbf884" />
+- Add a **Custom Provider Editor** for OpenAI-compatible API modes, allowing custom providers to be created and managed directly from settings instead of repeatedly entering custom URLs.
+- Add a unified OpenAI-compatible provider registry covering OpenAI, DeepSeek, Kimi.Moonshot, OpenRouter, AI/ML, ChatGLM, Ollama, and legacy Custom Model modes.
+- Add OpenRouter Auto Router and Free Models Router presets.
+- Refresh AI/ML default model presets for newer representative models.
+
+### New Models
+
+- Add OpenAI GPT-5-family presets, including chat-latest, GPT-5, GPT-5.1, GPT-5.2, GPT-5.2 latest, GPT-5.3 latest, GPT-5.4, GPT-5.4 mini/nano, and GPT-5.5.
+- Add Anthropic Claude Opus 4.1 / 4.5 / 4.6, Claude Sonnet 4.5 / 4.6, and Claude Haiku 4.5.
+- Add OpenRouter Gemini 3 / 3.1 and updated Claude / Gemini / OpenAI model entries.
+- Remove retired or unavailable OpenAI, Anthropic, OpenRouter, and AI/ML models to keep model lists cleaner.
 
 ### Improvements
-- add a range of new models recently made available by various AI providers
-- significantly improve the prompt templates for built-in tools. Great thanks to @PeterDaveHello 
-- update and enhance API clients (including Claude, ChatGLM, and Kimi.Moonshot) that had become unavailable or unstable due to recent policy changes and adjustments by AI providers
-- increase the default input and response limits, as current LLMs generally support longer contexts
-- improve kimi.moonshot support and add more available models like k2, kimi-latest, k1.5, k1.5-thinking
-- improve google search sidebar
+
+- Refactor OpenAI-compatible provider execution into a shared core and provider registry, improving maintainability across OpenAI, DeepSeek, Kimi.Moonshot, OpenRouter, AI/ML, ChatGLM, Ollama, and custom APIs.
+- Improve custom API mode migration and provider binding so existing API keys, custom modes, and saved conversations continue to work after the provider architecture refresh.
+- Improve GPT-5-family token parameter handling with provider-aware request logic, especially for models that require `max_completion_tokens`.
+- Improve model and provider display names, and align LLM provider naming with common industry terminology.
+- Improve build performance and configurability with the updated Webpack / esbuild / thread-loader pipeline.
+- Make static card initialization non-blocking.
+- Improve background-script and content-script error handling for better runtime stability.
 
 ### Fixes
-- fix the issue where YouTube subtitles could not be fetched and the video summarization feature became unavailable due to the recent introduction of the "pot" parameter by YouTube
-- avoid crash when readability parser returns null (#865) @PeterDaveHello 
-- fix the issue where kimi web functionality became unstable due to changes in the page and domain
-- fix an issue where the selected model might be not displayed correctly due to inconsistent key ordering in JSON.stringify
-- fix the issue of abnormal subtitle retrieval caused by changes to Bilibili API
 
-### Chores
-- update adapters support for startpage, kagi, naver, wechat, juejin
-- update dependencies to mitigate security vulnerabilities @PeterDaveHello 
-- update default configs
-- since ChatGPT has relaxed the web API request restrictions, it is no longer necessary to simulate input to retrieve data (#869)
-- update verify-search-engine-configs.mjs
+- Fix opening the side panel from context menu and shortcuts by preserving the required browser user gesture (#963).
+- Fix ChatGPT access-token retrieval when `Browser.cookies` is unavailable in some environments (#965).
+- Support the new Claude Web `sk-ant-sid02` session key format, as well as future numeric `sk-ant-sid` versions (#960).
+- Fix Bilibili video summaries so null subtitle entries no longer become literal `"null"` strings.
+- Fix invalid backup/import handling in popup settings to avoid broken or inconsistent configuration state.
+- Fix site-adapter display-name casing, such as `GitHub` and `arXiv`.
+- Fix various minor stability issues and edge cases.
+
+### Security
+
+- Harden `GET_COOKIE` message handling with sender authorization, payload validation, URL validation, and protocol/header checks.
+- Guard proxy message forwarding and custom API mode overrides.
+- Add sensitive-field redaction for background diagnostics and improve handling of circular or deeply nested objects.
+- Update dependencies and apply npm audit fixes for security advisories.
+
+### Chores / Developer Experience
+
+- Upgrade the development requirement from Node.js 20 to Node.js 22.
+- Add a Node.js unit-test baseline with browser shims.
+- Expand test coverage across config migration, provider registry, API clients, popup logic, services, wrappers, and utilities.
+- Add CI test/coverage workflows, PR checks, and README coverage badge updates.
+- Update GitHub Actions dependencies such as checkout, setup-node, setup-python, cache, and upload-artifact.
+- Refactor the build pipeline for better reliability and clearer failure handling.
+- Remove the obsolete OpenAI balance-check feature because the old billing endpoint no longer provides reliable results.
+- Improve AGENTS.md and reorganize test files.
+- Apply various code formatting and maintenance cleanups.
+
+## Contributors
+
+A huge thank you to everyone who contributed to this release through code, bug reports, reviews, testing, and ideas.
+
+**Full Changelog**: [v2.5.9...v2.6.0](https://github.com/ChatGPTBox-dev/chatGPTBox/compare/v2.5.9...v2.6.0)
