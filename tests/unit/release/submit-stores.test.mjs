@@ -89,20 +89,6 @@ test('updateFirefoxVersionNotes patches release notes and compatibility for the 
   const fetchImpl = async (url, init) => {
     calls.push({ url, init })
 
-    if (String(url).includes('/versions/?page_size=50')) {
-      return {
-        ok: true,
-        async json() {
-          return {
-            results: [
-              { id: 100, version: '2.6.0' },
-              { id: 101, version: '2.6.1' },
-            ],
-          }
-        },
-      }
-    }
-
     return {
       ok: true,
       async text() {
@@ -120,20 +106,54 @@ test('updateFirefoxVersionNotes patches release notes and compatibility for the 
     logger: () => {},
   })
 
-  assert.equal(calls.length, 2)
+  assert.equal(calls.length, 1)
   assert.equal(
     calls[0].url,
-    'https://addons.mozilla.org/api/v5/addons/addon/chatgptbox/versions/?page_size=50',
+    'https://addons.mozilla.org/api/v5/addons/addon/chatgptbox/versions/v2.6.1/',
   )
-  assert.equal(
-    calls[1].url,
-    'https://addons.mozilla.org/api/v5/addons/addon/chatgptbox/versions/101/',
-  )
-  assert.equal(calls[1].init.method, 'PATCH')
-  assert.deepEqual(JSON.parse(calls[1].init.body), {
+  assert.equal(calls[0].init.method, 'PATCH')
+  assert.deepEqual(JSON.parse(calls[0].init.body), {
     compatibility: FIREFOX_COMPATIBILITY,
     release_notes: {
       'en-US': 'https://github.com/josStorer/chatGPTBox/releases/tag/v2.6.1',
     },
   })
+})
+
+test('updateFirefoxVersionNotes retries when the AMO version endpoint is not ready yet', async () => {
+  const calls = []
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, init })
+
+    if (calls.length < 3) {
+      return {
+        ok: false,
+        status: 404,
+        async text() {
+          return 'not found'
+        },
+      }
+    }
+
+    return {
+      ok: true,
+      async text() {
+        return ''
+      },
+    }
+  }
+
+  await updateFirefoxVersionNotes({
+    extensionId: 'chatgptbox',
+    version: '2.6.1',
+    jwtIssuer: 'issuer',
+    jwtSecret: 'secret',
+    fetchImpl,
+    logger: () => {},
+    retryDelayMs: 0,
+    maxAttempts: 3,
+  })
+
+  assert.equal(calls.length, 3)
+  assert.ok(calls.every((call) => call.url.endsWith('/versions/v2.6.1/')))
 })

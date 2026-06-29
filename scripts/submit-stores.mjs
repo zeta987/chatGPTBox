@@ -102,6 +102,12 @@ async function readResponseText(response) {
   }
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms)
+  })
+}
+
 export async function updateFirefoxVersionNotes({
   extensionId,
   version,
@@ -109,49 +115,44 @@ export async function updateFirefoxVersionNotes({
   jwtSecret,
   fetchImpl = fetch,
   logger = console.log,
+  maxAttempts = 6,
+  retryDelayMs = 10000,
+  sleepImpl = sleep,
 }) {
   const amoId = encodeURIComponent(stripFirefoxExtensionId(extensionId))
   const authHeader = `JWT ${createFirefoxJwt(jwtIssuer, jwtSecret)}`
-  const versionsUrl = `${AMO_BASE_URL}/api/v5/addons/addon/${amoId}/versions/?page_size=50`
-  const versionsResponse = await fetchImpl(versionsUrl, {
-    headers: {
-      Authorization: authHeader,
-    },
-  })
-
-  if (!versionsResponse.ok) {
-    const body = await readResponseText(versionsResponse)
-    throw new Error(`Failed to fetch Firefox versions: ${versionsResponse.status} ${body}`)
-  }
-
-  const versions = await versionsResponse.json()
-  const matchedVersion = versions.results?.find((item) => item.version === version)
-  if (!matchedVersion?.id) {
-    throw new Error(`Could not find Firefox AMO version ${version} to update release notes`)
-  }
-
+  const amoVersion = encodeURIComponent(`v${version}`)
   const releaseNotes = buildFirefoxReleaseNotes(version)
-  const patchUrl = `${AMO_BASE_URL}/api/v5/addons/addon/${amoId}/versions/${matchedVersion.id}/`
-  const patchResponse = await fetchImpl(patchUrl, {
-    method: 'PATCH',
-    headers: {
-      Authorization: authHeader,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      compatibility: FIREFOX_COMPATIBILITY,
-      release_notes: {
-        'en-US': releaseNotes,
+  const patchUrl = `${AMO_BASE_URL}/api/v5/addons/addon/${amoId}/versions/${amoVersion}/`
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const patchResponse = await fetchImpl(patchUrl, {
+      method: 'PATCH',
+      headers: {
+        Authorization: authHeader,
+        'Content-Type': 'application/json',
       },
-    }),
-  })
+      body: JSON.stringify({
+        compatibility: FIREFOX_COMPATIBILITY,
+        release_notes: {
+          'en-US': releaseNotes,
+        },
+      }),
+    })
 
-  if (!patchResponse.ok) {
+    if (patchResponse.ok) {
+      logger(`Updated Firefox version metadata: ${releaseNotes}`)
+      return
+    }
+
     const body = await readResponseText(patchResponse)
-    throw new Error(`Failed to update Firefox version notes: ${patchResponse.status} ${body}`)
-  }
+    if (patchResponse.status !== 404 || attempt === maxAttempts) {
+      throw new Error(`Failed to update Firefox version metadata: ${patchResponse.status} ${body}`)
+    }
 
-  logger(`Updated Firefox version metadata: ${releaseNotes}`)
+    logger(`Firefox AMO version ${version} is not ready yet, retrying metadata update`)
+    await sleepImpl(retryDelayMs)
+  }
 }
 
 function resolvePublishExtensionBin() {
