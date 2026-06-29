@@ -16,7 +16,10 @@
     "stage": "run-script-os",
     "stage:default": "git add $(git diff --name-only --cached --diff-filter=d)",
     "stage:win32": "powershell git add $(git diff --name-only --cached --diff-filter=d)",
-    "verify": "node .github/workflows/scripts/verify-search-engine-configs.mjs"
+    "verify": "node .github/workflows/scripts/verify-search-engine-configs.mjs",
+    "release:firefox-sources": "node scripts/create-firefox-sources-zip.mjs",
+    "release:submit": "node scripts/submit-stores.mjs",
+    "release:submit:dry-run": "node scripts/submit-stores.mjs --dry-run"
   },
   "pre-commit": [
     "pretty",
@@ -94,6 +97,7 @@
     "pre-commit": "^1.2.2",
     "prettier": "^2.8.8",
     "progress-bar-webpack-plugin": "^2.1.0",
+    "publish-browser-extension": "^4.0.5",
     "run-script-os": "^1.1.6",
     "sass": "^1.91.0",
     "sass-embedded": "^1.91.0",
