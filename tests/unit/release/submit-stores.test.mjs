@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   buildFirefoxReleaseNotes,
   buildPublishExtensionArgs,
+  FIREFOX_COMPATIBILITY,
   findMissingArtifacts,
   findMissingEnv,
   parseArgs,
@@ -83,7 +84,7 @@ test('stripFirefoxExtensionId removes AMO GUID braces', () => {
   assert.equal(stripFirefoxExtensionId('chatgptbox'), 'chatgptbox')
 })
 
-test('updateFirefoxVersionNotes patches release notes for the matching AMO version', async () => {
+test('updateFirefoxVersionNotes patches release notes and compatibility for the matching AMO version', async () => {
   const calls = []
   const fetchImpl = async (url, init) => {
     calls.push({ url, init })
@@ -130,6 +131,7 @@ test('updateFirefoxVersionNotes patches release notes for the matching AMO versi
   )
   assert.equal(calls[1].init.method, 'PATCH')
   assert.deepEqual(JSON.parse(calls[1].init.body), {
+    compatibility: FIREFOX_COMPATIBILITY,
     release_notes: {
       'en-US': 'https://github.com/josStorer/chatGPTBox/releases/tag/v2.6.1',
     },

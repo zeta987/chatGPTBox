@@ -9,6 +9,16 @@ import { fileURLToPath } from 'node:url'
 
 const REQUIRED_ARTIFACTS = ['build/chromium.zip', 'build/firefox.zip', 'build/firefox-sources.zip']
 const AMO_BASE_URL = 'https://addons.mozilla.org'
+export const FIREFOX_COMPATIBILITY = {
+  firefox: {
+    min: '58.0',
+    max: '*',
+  },
+  android: {
+    min: '120.0',
+    max: '*',
+  },
+}
 
 const REQUIRED_ENV = [
   'CHROME_EXTENSION_ID',
@@ -129,6 +139,7 @@ export async function updateFirefoxVersionNotes({
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
+      compatibility: FIREFOX_COMPATIBILITY,
       release_notes: {
         'en-US': releaseNotes,
       },
@@ -140,7 +151,7 @@ export async function updateFirefoxVersionNotes({
     throw new Error(`Failed to update Firefox version notes: ${patchResponse.status} ${body}`)
   }
 
-  logger(`Updated Firefox version notes: ${releaseNotes}`)
+  logger(`Updated Firefox version metadata: ${releaseNotes}`)
 }
 
 function resolvePublishExtensionBin() {
