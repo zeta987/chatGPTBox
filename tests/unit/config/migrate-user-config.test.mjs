@@ -45,6 +45,61 @@ test('getUserConfig promotes legacy customUrl into custom provider and migrates 
   assert.equal(config.providerSecrets[migratedMode.providerId], 'legacy-custom-key')
 })
 
+test('getUserConfig migrates legacy model keys in selected config fields', async () => {
+  globalThis.__TEST_BROWSER_SHIM__.replaceStorage({
+    configSchemaVersion: 0,
+    modelName: 'chatgptFree4o',
+    activeApiModes: [
+      'chatgptFree4o',
+      'chatgptFree4oMini',
+      'claude2Api',
+      'moonshot_k2',
+      'openRouter_deepseek_deepseek_chat_v3_0324_free',
+    ],
+    apiMode: {
+      groupName: 'claudeApiModelKeys',
+      itemName: 'claude2Api',
+      isCustom: false,
+      customName: '',
+      customUrl: '',
+      apiKey: '',
+      providerId: '',
+      active: true,
+    },
+    customApiModes: [
+      {
+        groupName: 'aimlApiModelKeys',
+        itemName: 'aiml_openai_o3_2025_04_16',
+        isCustom: false,
+        customName: '',
+        customUrl: '',
+        apiKey: '',
+        providerId: '',
+        active: true,
+      },
+    ],
+  })
+
+  const config = await getUserConfig()
+  const storage = globalThis.__TEST_BROWSER_SHIM__.getStorage()
+
+  assert.equal(config.modelName, 'chatgptFree4oMini')
+  assert.equal(storage.modelName, 'chatgptFree4oMini')
+  assert.deepEqual(config.activeApiModes, [
+    'chatgptFree4oMini',
+    'claudeSonnet46Api',
+    'moonshot_k2_5',
+    'openRouter_deepseek_v4_flash',
+  ])
+  assert.deepEqual(storage.activeApiModes, config.activeApiModes)
+  assert.equal(config.apiMode.groupName, 'claudeApiModelKeys')
+  assert.equal(config.apiMode.itemName, 'claudeSonnet46Api')
+  assert.equal(storage.apiMode.itemName, 'claudeSonnet46Api')
+  assert.equal(config.customApiModes[0].groupName, 'aimlModelKeys')
+  assert.equal(config.customApiModes[0].itemName, 'aiml_openai_gpt_5_5')
+  assert.equal(storage.customApiModes[0].itemName, 'aiml_openai_gpt_5_5')
+})
+
 test('getUserConfig reuses custom mode key promoted earlier in the same migration pass', async () => {
   const customUrl = 'https://proxy.example.com/v1/chat/completions'
   globalThis.__TEST_BROWSER_SHIM__.replaceStorage({
@@ -826,7 +881,7 @@ test('getUserConfig clears non-custom mode providerId and migrates mode key to p
 
   const config = await getUserConfig()
   const migratedMode = config.customApiModes.find(
-    (mode) => mode.groupName === 'chatgptApiModelKeys' && mode.itemName === 'chatgptApi35',
+    (mode) => mode.groupName === 'chatgptApiModelKeys' && mode.itemName === 'chatgptApi4oMini',
   )
 
   assert.equal(migratedMode.providerId, '')
@@ -856,7 +911,7 @@ test('getUserConfig keeps empty providerSecrets entry when migrating non-custom 
 
   const config = await getUserConfig()
   const migratedMode = config.customApiModes.find(
-    (mode) => mode.groupName === 'chatgptApiModelKeys' && mode.itemName === 'chatgptApi35',
+    (mode) => mode.groupName === 'chatgptApiModelKeys' && mode.itemName === 'chatgptApi4oMini',
   )
 
   assert.equal(migratedMode.providerId, '')

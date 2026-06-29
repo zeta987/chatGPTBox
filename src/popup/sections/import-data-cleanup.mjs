@@ -1,3 +1,10 @@
+import {
+  canonicalizeApiMode,
+  canonicalizeModelKey,
+  canonicalizeModelKeyArray,
+  canonicalizeSessionModelFields,
+} from '../../config/model-key-migrations.mjs'
+
 const conflictingKeyPairs = [
   ['claudeApiKey', 'anthropicApiKey'],
   ['customClaudeApiUrl', 'customAnthropicApiUrl'],
@@ -18,6 +25,22 @@ export function prepareImportData(data) {
       normalizedData[legacyKey] = data[anthropicKey]
       keysToRemove.push(legacyKey)
     }
+  }
+
+  if (Object.hasOwn(normalizedData, 'modelName')) {
+    normalizedData.modelName = canonicalizeModelKey(normalizedData.modelName)
+  }
+  if (Object.hasOwn(normalizedData, 'apiMode')) {
+    normalizedData.apiMode = canonicalizeApiMode(normalizedData.apiMode)
+  }
+  if (Array.isArray(normalizedData.customApiModes)) {
+    normalizedData.customApiModes = normalizedData.customApiModes.map(canonicalizeApiMode)
+  }
+  if (Array.isArray(normalizedData.activeApiModes)) {
+    normalizedData.activeApiModes = canonicalizeModelKeyArray(normalizedData.activeApiModes)
+  }
+  if (Array.isArray(normalizedData.sessions)) {
+    normalizedData.sessions = normalizedData.sessions.map(canonicalizeSessionModelFields)
   }
 
   return { normalizedData, keysToRemove }

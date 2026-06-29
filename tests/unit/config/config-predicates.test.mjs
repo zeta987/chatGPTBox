@@ -13,6 +13,7 @@ import {
   isUsingAzureOpenAiApiModel,
   isUsingBingWebModel,
   isUsingChatGLMApiModel,
+  isUsingChatgptWebModel,
   isUsingChatgptApiModel,
   isUsingClaudeApiModel,
   isUsingCustomModel,
@@ -28,6 +29,10 @@ import {
   isUsingGptCompletionApiModel,
   isUsingOpenRouterApiModel,
 } from '../../../src/config/index.mjs'
+import {
+  LEGACY_MODEL_KEY_MIGRATIONS,
+  canonicalizeModelKey,
+} from '../../../src/config/model-key-migrations.mjs'
 
 const representativeChatgptApiModelNames = [
   'chatgptApi4oMini',
@@ -71,6 +76,33 @@ afterEach(() => {
 test('getNavigatorLanguage returns zhHant for zh-TW style locales', () => {
   setNavigatorLanguage('zh-TW')
   assert.equal(getNavigatorLanguage(), 'zhHant')
+})
+
+test('legacy model key migration targets remain valid model presets', () => {
+  for (const [legacyModelKey, targetModelKey] of Object.entries(LEGACY_MODEL_KEY_MIGRATIONS)) {
+    assert.ok(targetModelKey in Models, `${legacyModelKey} target ${targetModelKey} must exist`)
+    assert.equal(canonicalizeModelKey(legacyModelKey), targetModelKey)
+  }
+})
+
+test('canonicalized legacy model keys still match their provider predicates', () => {
+  const cases = [
+    ['chatgptFree4o', isUsingChatgptWebModel],
+    ['gptApiDavinci', isUsingGptCompletionApiModel],
+    ['chatgptApi35', isUsingChatgptApiModel],
+    ['chatgptApi4_128k_preview', isUsingChatgptApiModel],
+    ['claude2Api', isUsingClaudeApiModel],
+    ['claude3OpusApi', isUsingClaudeApiModel],
+    ['chatglmTurbo', isUsingChatGLMApiModel],
+    ['moonshot_k2', isUsingMoonshotApiModel],
+    ['openRouter_deepseek_deepseek_chat_v3_0324_free', isUsingOpenRouterApiModel],
+    ['aiml_openai_o3_2025_04_16', isUsingAimlApiModel],
+  ]
+
+  for (const [legacyModelKey, predicate] of cases) {
+    const canonicalModelKey = canonicalizeModelKey(legacyModelKey)
+    assert.equal(predicate({ modelName: canonicalModelKey }), true, legacyModelKey)
+  }
 })
 
 test('getNavigatorLanguage returns first two letters for non-zhHant locales', () => {
@@ -259,6 +291,7 @@ test('isUsingCustomNameOnlyModel detects poeAiWebCustom', () => {
 
 describe('getPreferredLanguageKey', () => {
   beforeEach(() => {
+    setNavigatorLanguage('en-US')
     globalThis.__TEST_BROWSER_SHIM__.clearStorage()
   })
 

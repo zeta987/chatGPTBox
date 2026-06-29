@@ -72,6 +72,64 @@ test('prepareImportData leaves unrelated imports untouched', () => {
   assert.deepEqual(keysToRemove, [])
 })
 
+test('prepareImportData migrates legacy model keys in imported config and sessions', () => {
+  const { normalizedData, keysToRemove } = prepareImportData({
+    modelName: 'chatgptFree4o',
+    activeApiModes: ['chatgptFree4o', 'chatgptFree4oMini', 'moonshot_k2'],
+    apiMode: {
+      groupName: 'openRouterApiModelKeys',
+      itemName: 'openRouter_deepseek_deepseek_chat_v3_0324_free',
+      isCustom: false,
+      customName: '',
+      customUrl: '',
+      apiKey: '',
+      providerId: '',
+      active: true,
+    },
+    customApiModes: [
+      {
+        groupName: 'aimlApiModelKeys',
+        itemName: 'aiml_openai_o3_2025_04_16',
+        isCustom: false,
+        customName: '',
+        customUrl: '',
+        apiKey: '',
+        providerId: '',
+        active: true,
+      },
+    ],
+    sessions: [
+      {
+        sessionId: 'legacy-session',
+        modelName: 'claude2Api',
+        apiMode: {
+          groupName: 'claudeApiModelKeys',
+          itemName: 'claude2Api',
+          isCustom: false,
+          customName: '',
+          customUrl: '',
+          apiKey: '',
+          providerId: '',
+          active: true,
+        },
+        conversationRecords: [{ role: 'assistant', answer: 'legacy' }],
+      },
+    ],
+  })
+
+  assert.equal(normalizedData.modelName, 'chatgptFree4oMini')
+  assert.deepEqual(normalizedData.activeApiModes, ['chatgptFree4oMini', 'moonshot_k2_5'])
+  assert.equal(normalizedData.apiMode.itemName, 'openRouter_deepseek_v4_flash')
+  assert.equal(normalizedData.customApiModes[0].groupName, 'aimlModelKeys')
+  assert.equal(normalizedData.customApiModes[0].itemName, 'aiml_openai_gpt_5_5')
+  assert.equal(normalizedData.sessions[0].modelName, 'claudeSonnet46Api')
+  assert.equal(normalizedData.sessions[0].apiMode.itemName, 'claudeSonnet46Api')
+  assert.deepEqual(normalizedData.sessions[0].conversationRecords, [
+    { role: 'assistant', answer: 'legacy' },
+  ])
+  assert.deepEqual(keysToRemove, [])
+})
+
 test('importDataIntoStorage writes normalized data before removing legacy keys', async () => {
   const calls = []
   const storageArea = {

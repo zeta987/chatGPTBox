@@ -111,7 +111,7 @@ test('registerPortListener defaults modelName from config when not set', async (
   port.emitMessage({ session: { conversationRecords: [] } })
   const session = await execDone
 
-  assert.equal(session.modelName, 'claude2Api')
+  assert.equal(session.modelName, 'claudeSonnet46Api')
 })
 
 test('registerPortListener preserves modelName when already set', async (t) => {

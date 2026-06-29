@@ -173,12 +173,13 @@ const chromeShim = {
   },
 }
 
-if (!globalThis.navigator) {
-  globalThis.navigator = {
+Object.defineProperty(globalThis, 'navigator', {
+  value: {
     language: 'en-US',
     userAgent: 'Mozilla/5.0 (X11; Linux x86_64)',
-  }
-}
+  },
+  configurable: true,
+})
 
 if (!globalThis.chrome) {
   globalThis.chrome = chromeShim

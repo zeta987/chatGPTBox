@@ -96,6 +96,35 @@ test('getSessions returns existing sessions from storage', async () => {
   assert.ok(sessions.some((sess) => sess.sessionId === s.sessionId))
 })
 
+test('getSessions migrates legacy model keys without changing conversation records', async () => {
+  const legacy = initSession({
+    sessionName: 'Legacy',
+    modelName: 'claude2Api',
+    apiMode: {
+      groupName: 'claudeApiModelKeys',
+      itemName: 'claude2Api',
+      isCustom: false,
+      customName: '',
+      customUrl: '',
+      apiKey: '',
+      providerId: '',
+      active: true,
+    },
+  })
+  legacy.conversationRecords = [{ role: 'assistant', answer: 'old answer' }]
+  globalThis.__TEST_BROWSER_SHIM__.setStorage({ sessions: [legacy] })
+
+  const sessions = await getSessions()
+  const storage = globalThis.__TEST_BROWSER_SHIM__.getStorage()
+
+  assert.equal(sessions[0].sessionId, legacy.sessionId)
+  assert.equal(sessions[0].modelName, 'claudeSonnet46Api')
+  assert.equal(sessions[0].apiMode.itemName, 'claudeSonnet46Api')
+  assert.deepEqual(sessions[0].conversationRecords, [{ role: 'assistant', answer: 'old answer' }])
+  assert.equal(storage.sessions[0].modelName, 'claudeSonnet46Api')
+  assert.equal(storage.sessions[0].apiMode.itemName, 'claudeSonnet46Api')
+})
+
 test('getSession finds session by id', async () => {
   const s = initSession({ sessionName: 'Find Me' })
   await createSession(s)

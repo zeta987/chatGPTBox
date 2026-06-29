@@ -11,6 +11,11 @@ import {
   LEGACY_SECRET_KEY_TO_PROVIDER_ID,
   OPENAI_COMPATIBLE_GROUP_TO_PROVIDER_ID as API_MODE_GROUP_TO_PROVIDER_ID,
 } from './openai-provider-mappings.mjs'
+import {
+  canonicalizeApiMode,
+  canonicalizeModelKey,
+  canonicalizeModelKeyArray,
+} from './model-key-migrations.mjs'
 
 export const TriggerMode = {
   always: 'Always',
@@ -966,6 +971,18 @@ function migrateUserConfig(options) {
     dirty = true
   }
 
+  const canonicalModelName = canonicalizeModelKey(migrated.modelName)
+  if (canonicalModelName !== migrated.modelName) {
+    migrated.modelName = canonicalModelName
+    dirty = true
+  }
+
+  const canonicalActiveApiModes = canonicalizeModelKeyArray(migrated.activeApiModes)
+  if (canonicalActiveApiModes !== migrated.activeApiModes) {
+    migrated.activeApiModes = canonicalActiveApiModes
+    dirty = true
+  }
+
   const hasProviderSecretsRecord = isPlainObject(migrated.providerSecrets)
   const providerSecrets = hasProviderSecretsRecord ? { ...migrated.providerSecrets } : {}
   if (!hasProviderSecretsRecord) {
@@ -1115,12 +1132,14 @@ function migrateUserConfig(options) {
   }
 
   const customApiModes = Array.isArray(migrated.customApiModes)
-    ? migrated.customApiModes.map((apiMode) => ({ ...apiMode }))
+    ? migrated.customApiModes.map((apiMode) => canonicalizeApiMode({ ...apiMode }))
     : []
   if (!Array.isArray(migrated.customApiModes)) dirty = true
 
   let customProviderCounter = customOpenAIProviders.length
-  let customApiModesDirty = false
+  let customApiModesDirty =
+    Array.isArray(migrated.customApiModes) &&
+    JSON.stringify(customApiModes) !== JSON.stringify(migrated.customApiModes)
   let customProvidersDirty = false
   const migratedCustomModeProviderIds = new Map()
   const pendingLegacyCustomUrlProviderSecretBackfillIds = new Set()
@@ -1335,8 +1354,8 @@ function migrateUserConfig(options) {
   backfillPendingLegacyCustomUrlProviderSecrets()
 
   if (migrated.apiMode && typeof migrated.apiMode === 'object') {
-    const selectedApiMode = { ...migrated.apiMode }
-    let selectedApiModeDirty = false
+    const selectedApiMode = canonicalizeApiMode({ ...migrated.apiMode })
+    let selectedApiModeDirty = JSON.stringify(selectedApiMode) !== JSON.stringify(migrated.apiMode)
     const selectedIsCustom = selectedApiMode.groupName === 'customApiModelKeys'
     let selectedProviderIdAssignedFromLegacyCustomUrl = false
     const originalSelectedCustomModeSignature = selectedIsCustom
@@ -1552,6 +1571,12 @@ export async function getUserConfig() {
     const payload = {}
     if (JSON.stringify(options.customApiModes) !== JSON.stringify(migrated.customApiModes)) {
       payload.customApiModes = migrated.customApiModes
+    }
+    if (options.modelName !== migrated.modelName) {
+      payload.modelName = migrated.modelName
+    }
+    if (JSON.stringify(options.activeApiModes) !== JSON.stringify(migrated.activeApiModes)) {
+      payload.activeApiModes = migrated.activeApiModes
     }
     if (
       JSON.stringify(options.customOpenAIProviders) !==
