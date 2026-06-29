@@ -856,7 +856,6 @@ async function prepareForJumpBackNotification() {
 
 let manageChatGptTabStatePromise = null
 let chatGPTBoxPortListenerRegistered = false
-let chatGptPromptTextareaPoked = false
 
 function ensureChatGptPortListenerRegistered() {
   if (chatGPTBoxPortListenerRegistered) {
@@ -1009,50 +1008,6 @@ async function manageChatGptTabState() {
       )
 
       if (isThisTabDesignatedForChatGptWeb) {
-        if (location.pathname === '/') {
-          console.debug('[content] On chatgpt.com root path.')
-          const input = document.querySelector('#prompt-textarea')
-          if (!chatGptPromptTextareaPoked && input && input.value === '') {
-            console.log('[content] Manipulating #prompt-textarea for focus.')
-            if (document.activeElement === input) {
-              console.debug('[content] #prompt-textarea already focused; skipping injection.')
-            } else {
-              const injectedValue = ' '
-              chatGptPromptTextareaPoked = true
-              input.value = injectedValue
-              input.dispatchEvent(new Event('input', { bubbles: true }))
-              setTimeout(() => {
-                const currentInput = document.querySelector('#prompt-textarea')
-                if (!currentInput?.isConnected) {
-                  console.warn(
-                    '[content] #prompt-textarea no longer available in setTimeout callback.',
-                  )
-                  return
-                }
-                if (document.activeElement === currentInput) {
-                  console.debug('[content] #prompt-textarea focused; skipping injection cleanup.')
-                  return
-                }
-                if (currentInput.value === injectedValue) {
-                  currentInput.value = ''
-                  currentInput.dispatchEvent(new Event('input', { bubbles: true }))
-                  console.debug('[content] #prompt-textarea manipulation complete.')
-                } else if (currentInput.value.startsWith(injectedValue)) {
-                  currentInput.value = currentInput.value.slice(injectedValue.length)
-                  currentInput.dispatchEvent(new Event('input', { bubbles: true }))
-                  console.debug('[content] Removed injected leading space from #prompt-textarea.')
-                }
-              }, 300)
-            }
-          } else {
-            console.debug(
-              '[content] #prompt-textarea not found, not empty (value: "' +
-                input?.value +
-                '"), or not on root path for manipulation.',
-            )
-          }
-        }
-
         console.log('[content] Sending SET_CHATGPT_TAB message.')
         await Browser.runtime.sendMessage({
           type: 'SET_CHATGPT_TAB',
