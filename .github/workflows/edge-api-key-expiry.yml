@@ -12,7 +12,7 @@ jobs:
   check-edge-api-key-expiry:
     runs-on: ubuntu-latest
     env:
-      EDGE_API_KEY_EXPIRES_AT: ${{ vars.EDGE_API_KEY_EXPIRES_AT }}
+      EDGE_API_KEY_EXPIRES_AT: ${{ secrets.EDGE_API_KEY_EXPIRES_AT }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
