@@ -288,6 +288,7 @@ export async function generateAnswersWithOpenAiApiCompat(
 
   let startTime = Date.now()
   let lastProgressTime = 0 // 記錄上次發送進度的時間
+  let thinkingEndTime = 0 // 思考結束時的耗時（毫秒）
 
   // 添加保活機制
   const keepAlive = (() => {
@@ -306,7 +307,16 @@ export async function generateAnswersWithOpenAiApiCompat(
 
   const finish = () => {
     finished = true
-    pushRecord(session, question, actualContent)
+    const thinkingData = reasoning
+      ? {
+          reasoningContent: reasoning,
+          actualContent: actualContent,
+          thinkingTime: thinkingEndTime || Date.now() - startTime,
+          hasReasoning: true,
+          isThinking: false,
+        }
+      : null
+    pushRecord(session, question, actualContent, thinkingData ? { thinkingData } : {})
     console.debug('conversation history', { content: session.conversationRecords })
     port.postMessage({ answer: null, done: true, session: session })
     keepAlive(false) // 停止保活
@@ -378,6 +388,7 @@ export async function generateAnswersWithOpenAiApiCompat(
           if (content !== null) {
             actualContent += content
             const currentTime = Date.now() - startTime
+            if (reasoning && !thinkingEndTime) thinkingEndTime = currentTime
 
             if (isReasoning && reasoning) {
               answer = `> ${reasoning.split('\n').join('\n> ')}\n\n${actualContent}`

@@ -48,11 +48,19 @@ export function setAbortController(port, onStop, onDisconnect) {
   return { controller, cleanController, messageListener, disconnectListener }
 }
 
-export function pushRecord(session, question, answer) {
+export function pushRecord(session, question, answer, extra = {}) {
   const recordLength = session.conversationRecords.length
   let lastRecord
   if (recordLength > 0) lastRecord = session.conversationRecords[recordLength - 1]
 
-  if (session.isRetry && lastRecord && lastRecord.question === question) lastRecord.answer = answer
-  else session.conversationRecords.push({ question: question, answer: answer })
+  const thinkingData = extra?.thinkingData
+  if (session.isRetry && lastRecord && lastRecord.question === question) {
+    lastRecord.answer = answer
+    if (thinkingData) lastRecord.thinkingData = thinkingData
+    else delete lastRecord.thinkingData
+  } else {
+    const record = { question: question, answer: answer }
+    if (thinkingData) record.thinkingData = thinkingData
+    session.conversationRecords.push(record)
+  }
 }

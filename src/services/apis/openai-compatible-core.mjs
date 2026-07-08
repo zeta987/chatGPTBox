@@ -31,6 +31,10 @@ function hasFinished(data) {
   return Boolean(data?.choices?.[0]?.finish_reason)
 }
 
+function quoteReasoning(reasoning) {
+  return `> ${reasoning.split('\n').join('\n> ')}`
+}
+
 /**
  * @param {object} params
  * @param {Browser.Runtime.Port} params.port
@@ -107,11 +111,23 @@ export async function generateAnswersWithOpenAICompatible({
   }
 
   let answer = ''
+  let reasoning = ''
   let finished = false
+  const startTime = Date.now()
+  let thinkingEndTime = 0
   const finish = () => {
     if (finished) return
     finished = true
-    pushRecord(session, question, answer)
+    const thinkingData = reasoning
+      ? {
+          reasoningContent: reasoning,
+          actualContent: answer,
+          thinkingTime: thinkingEndTime || Date.now() - startTime,
+          hasReasoning: true,
+          isThinking: false,
+        }
+      : null
+    pushRecord(session, question, answer, thinkingData ? { thinkingData } : {})
     port.postMessage({ answer: null, done: true, session: session })
   }
 
@@ -134,8 +150,39 @@ export async function generateAnswersWithOpenAICompatible({
         return
       }
 
+      const reasoningDelta = data?.choices?.[0]?.delta?.reasoning_content
+      if (typeof reasoningDelta === 'string' && reasoningDelta) {
+        reasoning += reasoningDelta
+        port.postMessage({
+          type: 'thinking_update',
+          answer: quoteReasoning(reasoning),
+          reasoningContent: reasoning,
+          thinkingTime: Date.now() - startTime,
+          isThinking: true,
+          done: false,
+          session: null,
+        })
+      }
+
+      const previousAnswer = answer
       answer = buildMessageAnswer(answer, data, allowLegacyResponseField)
-      port.postMessage({ answer: answer, done: false, session: null })
+      if (reasoning) {
+        if (answer !== previousAnswer) {
+          if (!thinkingEndTime) thinkingEndTime = Date.now() - startTime
+          port.postMessage({
+            type: 'content_update',
+            answer: `${quoteReasoning(reasoning)}\n\n${answer}`,
+            actualContent: answer,
+            reasoningContent: reasoning,
+            thinkingTime: thinkingEndTime,
+            isThinking: false,
+            done: false,
+            session: null,
+          })
+        }
+      } else {
+        port.postMessage({ answer: answer, done: false, session: null })
+      }
 
       if (hasFinished(data)) {
         finish()

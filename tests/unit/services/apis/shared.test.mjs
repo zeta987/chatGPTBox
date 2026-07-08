@@ -38,6 +38,83 @@ test('pushRecord appends when retry question differs from last one', () => {
   assert.deepEqual(session.conversationRecords[1], { question: 'Q2', answer: 'A2' })
 })
 
+test('pushRecord attaches thinkingData when provided', () => {
+  const session = {
+    isRetry: false,
+    conversationRecords: [],
+  }
+  const thinkingData = {
+    reasoningContent: 'Because reasons.',
+    actualContent: 'A1',
+    thinkingTime: 1234,
+    hasReasoning: true,
+    isThinking: false,
+  }
+
+  pushRecord(session, 'Q1', 'A1', { thinkingData })
+
+  assert.deepEqual(session.conversationRecords, [{ question: 'Q1', answer: 'A1', thinkingData }])
+})
+
+test('pushRecord replaces thinkingData when retrying same question', () => {
+  const session = {
+    isRetry: true,
+    conversationRecords: [
+      {
+        question: 'Q1',
+        answer: 'Old',
+        thinkingData: {
+          reasoningContent: 'Old reasoning',
+          actualContent: 'Old',
+          thinkingTime: 1,
+          hasReasoning: true,
+          isThinking: false,
+        },
+      },
+    ],
+  }
+  const thinkingData = {
+    reasoningContent: 'New reasoning',
+    actualContent: 'New',
+    thinkingTime: 2,
+    hasReasoning: true,
+    isThinking: false,
+  }
+
+  pushRecord(session, 'Q1', 'New', { thinkingData })
+
+  assert.equal(session.conversationRecords.length, 1)
+  assert.deepEqual(session.conversationRecords[0], {
+    question: 'Q1',
+    answer: 'New',
+    thinkingData,
+  })
+})
+
+test('pushRecord removes stale thinkingData when retry answer has no reasoning', () => {
+  const session = {
+    isRetry: true,
+    conversationRecords: [
+      {
+        question: 'Q1',
+        answer: 'Old',
+        thinkingData: {
+          reasoningContent: 'Old reasoning',
+          actualContent: 'Old',
+          thinkingTime: 1,
+          hasReasoning: true,
+          isThinking: false,
+        },
+      },
+    ],
+  }
+
+  pushRecord(session, 'Q1', 'New')
+
+  assert.equal(session.conversationRecords.length, 1)
+  assert.deepEqual(session.conversationRecords[0], { question: 'Q1', answer: 'New' })
+})
+
 test('setAbortController aborts and cleans listeners on stop message', (t) => {
   t.mock.method(console, 'debug', () => {})
   const port = createFakePort()
