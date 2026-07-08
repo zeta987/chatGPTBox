@@ -31,10 +31,6 @@ function hasFinished(data) {
   return Boolean(data?.choices?.[0]?.finish_reason)
 }
 
-function quoteReasoning(reasoning) {
-  return `> ${reasoning.split('\n').join('\n> ')}`
-}
-
 /**
  * @param {object} params
  * @param {Browser.Runtime.Port} params.port
@@ -111,23 +107,60 @@ export async function generateAnswersWithOpenAICompatible({
   }
 
   let answer = ''
-  let reasoning = ''
   let finished = false
+
+  // Reasoning/thinking state (mirrors the reasoning handling that used to live in
+  // generateAnswersWithOpenAiApiCompat, see src/services/apis/openai-api.mjs).
+  // Only kicks in once a delta actually carries a `reasoning_content` key, so
+  // providers that never send it keep using the plain `answer`/`done` message shape.
+  let hasReasoning = false
+  let reasoning = ''
+  let actualContent = ''
   const startTime = Date.now()
+  let lastProgressTime = 0
   let thinkingEndTime = 0
+
   const finish = () => {
     if (finished) return
     finished = true
-    const thinkingData = reasoning
+    if (hasReasoning) {
+      // Flush a final content_update with isThinking:false, mirroring the shape of the
+      // streaming content_update messages above. This is required even when no content
+      // delta was ever received (e.g. finish_reason during thinking, or a refusal) so the
+      // UI's ThinkingBlock is never left stuck in the "thinking" state, and it also flushes
+      // any reasoning tail that the throttled thinking_update messages haven't sent yet.
+      const currentTime = Date.now() - startTime
+      const displayAnswer = reasoning
+        ? `> ${reasoning.split('\n').join('\n> ')}\n\n${actualContent}`
+        : actualContent
+      port.postMessage({
+        type: 'content_update',
+        answer: displayAnswer,
+        actualContent: actualContent,
+        reasoningContent: reasoning,
+        thinkingTime: currentTime,
+        isThinking: false,
+        done: false,
+        session: null,
+      })
+    }
+    // Persist the reasoning alongside the answer so the ThinkingBlock can be restored
+    // after a saved conversation is reloaded (e.g. from the IndependentPanel).
+    const thinkingData = hasReasoning
       ? {
           reasoningContent: reasoning,
-          actualContent: answer,
+          actualContent: actualContent,
           thinkingTime: thinkingEndTime || Date.now() - startTime,
           hasReasoning: true,
           isThinking: false,
         }
       : null
-    pushRecord(session, question, answer, thinkingData ? { thinkingData } : {})
+    pushRecord(
+      session,
+      question,
+      hasReasoning ? actualContent : answer,
+      thinkingData ? { thinkingData } : {},
+    )
     port.postMessage({ answer: null, done: true, session: session })
   }
 
@@ -150,37 +183,51 @@ export async function generateAnswersWithOpenAICompatible({
         return
       }
 
-      const reasoningDelta = data?.choices?.[0]?.delta?.reasoning_content
-      if (typeof reasoningDelta === 'string' && reasoningDelta) {
-        reasoning += reasoningDelta
-        port.postMessage({
-          type: 'thinking_update',
-          answer: quoteReasoning(reasoning),
-          reasoningContent: reasoning,
-          thinkingTime: Date.now() - startTime,
-          isThinking: true,
-          done: false,
-          session: null,
-        })
+      const reasoningContent = data?.choices?.[0]?.delta?.reasoning_content
+      // Only a non-empty string actually signals reasoning is happening. An empty string (some
+      // providers send `reasoning_content: ""` as a placeholder before real reasoning starts, or
+      // never at all) or null must not flip hasReasoning, since that flag is sticky in the UI and
+      // would otherwise leave a permanent empty thinking block.
+      if (typeof reasoningContent === 'string' && reasoningContent !== '') {
+        hasReasoning = true
+        reasoning += reasoningContent
+        const currentTime = Date.now() - startTime
+        if (currentTime - lastProgressTime > 500 || reasoning.length < 100) {
+          lastProgressTime = currentTime
+          port.postMessage({
+            type: 'thinking_update',
+            answer: `> ${reasoning.split('\n').join('\n> ')}`,
+            reasoningContent: reasoning,
+            thinkingTime: currentTime,
+            isThinking: true,
+            done: false,
+            session: null,
+          })
+        }
       }
 
-      const previousAnswer = answer
-      answer = buildMessageAnswer(answer, data, allowLegacyResponseField)
-      if (reasoning) {
-        if (answer !== previousAnswer) {
-          if (!thinkingEndTime) thinkingEndTime = Date.now() - startTime
+      if (hasReasoning) {
+        const content = data?.choices?.[0]?.delta?.content
+        if (content !== undefined && content !== null) {
+          actualContent += content
+          const currentTime = Date.now() - startTime
+          if (!thinkingEndTime) thinkingEndTime = currentTime
+          const displayAnswer = reasoning
+            ? `> ${reasoning.split('\n').join('\n> ')}\n\n${actualContent}`
+            : actualContent
           port.postMessage({
             type: 'content_update',
-            answer: `${quoteReasoning(reasoning)}\n\n${answer}`,
-            actualContent: answer,
+            answer: displayAnswer,
+            actualContent: actualContent,
             reasoningContent: reasoning,
-            thinkingTime: thinkingEndTime,
+            thinkingTime: currentTime,
             isThinking: false,
             done: false,
             session: null,
           })
         }
       } else {
+        answer = buildMessageAnswer(answer, data, allowLegacyResponseField)
         port.postMessage({ answer: answer, done: false, session: null })
       }
 

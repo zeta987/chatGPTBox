@@ -34,7 +34,11 @@ describe('selection-tools genPrompt', () => {
 
   test('translate produces translation prompt with preferred language', async () => {
     const result = await config.translate.genPrompt('bonjour')
-    assert.ok(result.includes('Translate the following text into English'))
+    assert.ok(
+      result.includes(
+        'Translate the following into English and only show me the translated content',
+      ),
+    )
     assert.ok(result.endsWith(wrappedBlock('bonjour')))
     // translate has no language prefix
     assert.ok(!result.startsWith('Reply in'))
@@ -43,19 +47,31 @@ describe('selection-tools genPrompt', () => {
   test('translateToEn always targets English regardless of preference', async () => {
     globalThis.__TEST_BROWSER_SHIM__.setStorage({ preferredLanguage: 'ja' })
     const result = await config.translateToEn.genPrompt('hola')
-    assert.ok(result.includes('Translate the following text into English'))
+    assert.ok(
+      result.includes(
+        'Translate the following into English and only show me the translated content',
+      ),
+    )
     assert.ok(result.endsWith(wrappedBlock('hola')))
   })
 
   test('translateToZh always targets Chinese', async () => {
     const result = await config.translateToZh.genPrompt('hello')
-    assert.ok(result.includes('Translate the following text into Chinese'))
+    assert.ok(
+      result.includes(
+        'Translate the following into Chinese and only show me the translated content',
+      ),
+    )
     assert.ok(result.endsWith(wrappedBlock('hello')))
   })
 
   test('translateBidi includes bidirectional fallback instruction', async () => {
     const result = await config.translateBidi.genPrompt('hello')
-    assert.ok(result.includes('Translate the following text into English'))
+    assert.ok(
+      result.includes(
+        'Translate the following into English and only show me the translated content',
+      ),
+    )
     assert.ok(result.includes('translate it into English instead'))
     assert.ok(result.endsWith(wrappedBlock('hello')))
   })
@@ -67,10 +83,11 @@ describe('selection-tools genPrompt', () => {
     assert.ok(result.endsWith(wrappedBlock('long article')))
   })
 
-  test('polish has no language prefix', async () => {
+  test('polish has no Reply-in prefix but embeds preferred language in the explanation instruction', async () => {
     const result = await config.polish.genPrompt('bad grammer')
     assert.ok(!result.startsWith('Reply in'))
-    assert.ok(result.includes('Correct grammar'))
+    assert.ok(result.includes('first polish the provided text'))
+    assert.ok(result.includes('explain the polished text in English'))
     assert.ok(result.endsWith(wrappedBlock('bad grammer')))
   })
 
@@ -81,10 +98,11 @@ describe('selection-tools genPrompt', () => {
     assert.ok(result.endsWith(wrappedBlock('I love this')))
   })
 
-  test('divide has no language prefix', async () => {
+  test('divide has no Reply-in prefix but embeds preferred language in the explanation instruction', async () => {
     const result = await config.divide.genPrompt('wall of text')
     assert.ok(!result.startsWith('Reply in'))
-    assert.ok(result.includes('Divide the following text'))
+    assert.ok(result.includes('first divide the provided text into paragraphs'))
+    assert.ok(result.includes('explain the restructured text in English'))
     assert.ok(result.endsWith(wrappedBlock('wall of text')))
   })
 
@@ -109,14 +127,22 @@ describe('translation tools respect language settings', () => {
   test('translate uses preferred language from config', async () => {
     globalThis.__TEST_BROWSER_SHIM__.setStorage({ preferredLanguage: 'ja' })
     const result = await config.translate.genPrompt('hello')
-    assert.ok(result.includes('Translate the following text into Japanese'))
+    assert.ok(
+      result.includes(
+        'Translate the following into Japanese and only show me the translated content',
+      ),
+    )
   })
 
   test('translate falls back to navigator language when preference is auto', async () => {
     globalThis.__TEST_BROWSER_SHIM__.setStorage({ preferredLanguage: 'auto' })
     const result = await config.translate.genPrompt('hello')
     // navigator.language is 'en-US' via browser shim → userLanguage 'en' → English
-    assert.ok(result.includes('Translate the following text into English'))
+    assert.ok(
+      result.includes(
+        'Translate the following into English and only show me the translated content',
+      ),
+    )
   })
 
   test('translateToEn ignores preferred language', async () => {
@@ -178,7 +204,7 @@ describe('empty selection handled gracefully', () => {
 
   test('translate with empty string still produces valid prompt', async () => {
     const result = await config.translate.genPrompt('')
-    assert.ok(result.includes('Translate the following text'))
+    assert.ok(result.includes('Translate the following into'))
     assert.ok(result.endsWith(wrappedBlock('')))
   })
 

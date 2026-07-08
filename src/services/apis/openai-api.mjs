@@ -1,10 +1,4 @@
-/* global chrome */
-
 import { getUserConfig } from '../../config/index.mjs'
-import { fetchSSE } from '../../utils/fetch-sse.mjs'
-import { getConversationPairs } from '../../utils/get-conversation-pairs.mjs'
-import { isEmpty } from 'lodash-es'
-import { pushRecord, setAbortController } from './shared.mjs'
 import { getModelValue } from '../../utils/model-name-convert.mjs'
 import { generateAnswersWithOpenAICompatible } from './openai-compatible-core.mjs'
 import {
@@ -270,192 +264,19 @@ export async function generateAnswersWithOpenAiApiCompat(
   provider = 'compat',
   config = null,
 ) {
-  const { controller, messageListener, disconnectListener } = setAbortController(port)
-  const model = getModelValue(session)
-
   const runtimeConfig = await resolveOpenAICompatibleRuntimeConfig(config)
-  const prompt = getConversationPairs(
-    session.conversationRecords.slice(-runtimeConfig.maxConversationContextLength),
-    false,
-  )
-  prompt.push({ role: 'user', content: question })
-
-  let answer = '' // 用於顯示的完整內容（包含思考標記）
-  let actualContent = '' // 用於保存的實際內容（不包含思考標記）
-  let reasoning = ''
-  let isReasoning = true
-  let finished = false
-
-  let startTime = Date.now()
-  let lastProgressTime = 0 // 記錄上次發送進度的時間
-  let thinkingEndTime = 0 // 思考結束時的耗時（毫秒）
-
-  // 添加保活機制
-  const keepAlive = (() => {
-    let interval
-    return (state) => {
-      if (state && !interval) {
-        interval = setInterval(() => {
-          chrome.runtime.getPlatformInfo(() => {})
-        }, 20000)
-      } else if (!state && interval) {
-        clearInterval(interval)
-        interval = null
-      }
-    }
-  })()
-
-  const finish = () => {
-    finished = true
-    const thinkingData = reasoning
-      ? {
-          reasoningContent: reasoning,
-          actualContent: actualContent,
-          thinkingTime: thinkingEndTime || Date.now() - startTime,
-          hasReasoning: true,
-          isThinking: false,
-        }
-      : null
-    pushRecord(session, question, actualContent, thinkingData ? { thinkingData } : {})
-    console.debug('conversation history', { content: session.conversationRecords })
-    port.postMessage({ answer: null, done: true, session: session })
-    keepAlive(false) // 停止保活
-  }
-
-  const baseBody = {
-    messages: prompt,
-    model,
-    stream: true,
-    temperature: runtimeConfig.temperature,
-    ...extraBody,
-  }
-  if (runtimeConfig.maxResponseTokenLength < 40000) {
-    baseBody.max_tokens = runtimeConfig.maxResponseTokenLength
-  }
-
-  try {
-    keepAlive(true)
-    startTime = Date.now()
-
-    await fetchSSE(`${normalizeBaseUrl(baseUrl)}/chat/completions`, {
-      method: 'POST',
-      signal: controller.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(baseBody),
-      onMessage(message) {
-        console.debug('sse message', message)
-        if (finished) return
-        if (message.trim() === '[DONE]') {
-          finish()
-          return
-        }
-        let data
-        try {
-          data = JSON.parse(message)
-        } catch (error) {
-          console.debug('json error', error)
-          return
-        }
-
-        const delta = data.choices[0]?.delta
-        const reasoningContent = delta?.reasoning_content
-        const content = delta?.content
-
-        if (reasoningContent !== undefined) {
-          if (reasoningContent !== null) {
-            reasoning += reasoningContent
-            const currentTime = Date.now() - startTime
-
-            if (currentTime - lastProgressTime > 500 || reasoning.length < 100) {
-              lastProgressTime = currentTime
-              port.postMessage({
-                type: 'thinking_update',
-                answer: `> ${reasoning.split('\n').join('\n> ')}`,
-                reasoningContent: reasoning,
-                thinkingTime: currentTime,
-                isThinking: true,
-                done: false,
-                session: null,
-              })
-            }
-          }
-        }
-
-        if (content !== undefined) {
-          if (content !== null) {
-            actualContent += content
-            const currentTime = Date.now() - startTime
-            if (reasoning && !thinkingEndTime) thinkingEndTime = currentTime
-
-            if (isReasoning && reasoning) {
-              answer = `> ${reasoning.split('\n').join('\n> ')}\n\n${actualContent}`
-              isReasoning = false
-            } else if (isReasoning && !reasoning) {
-              answer = actualContent
-              isReasoning = false
-            } else {
-              if (reasoning) {
-                answer = `> ${reasoning.split('\n').join('\n> ')}\n\n${actualContent}`
-              } else {
-                answer = actualContent
-              }
-            }
-
-            port.postMessage({
-              type: 'content_update',
-              answer: answer,
-              actualContent: actualContent,
-              reasoningContent: reasoning,
-              thinkingTime: currentTime,
-              isThinking: false,
-              done: false,
-              session: null,
-            })
-          }
-        }
-
-        if (data.choices[0]?.finish_reason) {
-          finish()
-          return
-        }
-      },
-      async onStart() {},
-      async onEnd() {
-        port.postMessage({ done: true })
-        port.onMessage.removeListener(messageListener)
-        port.onDisconnect.removeListener(disconnectListener)
-        keepAlive(false) // 停止保活
-      },
-      async onError(resp) {
-        port.onMessage.removeListener(messageListener)
-        port.onDisconnect.removeListener(disconnectListener)
-        keepAlive(false) // 停止保活
-
-        if (resp.name === 'AbortError') {
-          console.log('Request was aborted, this is normal when switching conversations')
-          return
-        }
-
-        if (resp instanceof Error) throw resp
-        const error = await resp.json().catch(() => ({}))
-        throw new Error(
-          !isEmpty(error) ? JSON.stringify(error) : `${resp.status} ${resp.statusText}`,
-        )
-      },
-    })
-  } catch (error) {
-    if (error.name === 'AbortError') {
-      console.log('Connection was aborted, this is normal when closing the chat')
-      return
-    }
-
-    console.error(`Error in generateAnswersWithOpenAiApiCompat (provider: ${provider}):`, error)
-    keepAlive(false) // 確保在出錯時也停止保活
-    throw error
-  }
+  await generateAnswersWithOpenAICompatible({
+    port,
+    question,
+    session,
+    endpointType: 'chat',
+    requestUrl: `${normalizeBaseUrl(baseUrl)}/chat/completions`,
+    model: getModelValue(session),
+    apiKey,
+    config: runtimeConfig,
+    extraBody,
+    provider,
+  })
 }
 
 /**
