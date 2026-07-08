@@ -1,4 +1,9 @@
-@import '../fonts/styles.css';
+// NOTE: '../fonts/styles.css' (the Cairo @font-face rules) is intentionally NOT imported here.
+// content-script.css is injected into every http/https page — including Cloudflare Managed
+// Challenge pages — and @font-face rules there alter font-fingerprinting and break Cloudflare's
+// challenge flow. The .chatgptbox-container font-family below still references 'Cairo'; the
+// actual font faces are lazy-loaded via ensureStylesheet('fonts.css') in content-script/index.jsx
+// once we know we're not on a challenge page.
 @import '../pages/styles.scss';
 
 [data-theme='auto'] {

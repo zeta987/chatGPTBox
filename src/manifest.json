@@ -65,7 +65,9 @@
     {
       "resources": [
         "logo.png",
-        "content-script.css"
+        "content-script.css",
+        "katex.css",
+        "fonts.css"
       ],
       "matches": [
         "<all_urls>"

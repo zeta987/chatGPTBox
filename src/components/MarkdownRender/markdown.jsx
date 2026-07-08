@@ -1,4 +1,3 @@
-import './mykatex.min.css'
 import ReactMarkdown from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
 import rehypeHighlight from 'rehype-highlight'
@@ -8,8 +7,20 @@ import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
 import { Pre } from './Pre'
 import { Hyperlink } from './Hyperlink'
-import { memo, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import Browser from 'webextension-polyfill'
+import { ensureStylesheet } from '../../utils/ensure-stylesheet.mjs'
+
+// KaTeX fonts/styles are bundled as a standalone stylesheet (katex.css) instead of being
+// statically imported here, because a static import would end up inlined into
+// content-script.css, which is injected into every http/https page — including Cloudflare
+// challenge pages, where the extra @font-face rules break Cloudflare's font-fingerprinting
+// check. Loading it lazily on mount keeps content-script.css font-free while still giving
+// KaTeX its fonts wherever MarkdownRender actually renders (content scripts, popup, panel).
+export function ensureKatexStylesheet(doc = document, browser = Browser) {
+  ensureStylesheet('chatgptbox-katex-css', 'katex.css', doc, browser)
+}
 
 // eslint-disable-next-line
 const ThinkComponent = ({ node, children, ...props }) => {
@@ -112,6 +123,10 @@ const ThinkComponent = ({ node, children, ...props }) => {
 }
 
 export function MarkdownRender(props) {
+  useEffect(() => {
+    ensureKatexStylesheet()
+  }, [])
+
   return (
     <div dir="auto">
       <ReactMarkdown

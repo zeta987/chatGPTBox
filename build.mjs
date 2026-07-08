@@ -116,6 +116,93 @@ async function deleteOldDir() {
   await fs.rm(outdir, { recursive: true, force: true })
 }
 
+// Build the standalone katex.css asset: same font-face rules as
+// src/components/MarkdownRender/mykatex.min.css, but with each @font-face's `src` collapsed to
+// a single inlined woff2 data URI (woff/ttf fallbacks dropped to keep the file small). This file
+// is intentionally NOT part of content-script.css — see markdown.jsx for why.
+const katexFontDataUriCache = new Map()
+async function getKatexFontDataUri(fontFileName) {
+  if (katexFontDataUriCache.has(fontFileName)) return katexFontDataUriCache.get(fontFileName)
+  const fontPath = path.resolve(__dirname, 'node_modules/katex/dist/fonts', fontFileName)
+  const buf = await fs.readFile(fontPath)
+  const dataUri = `data:font/woff2;base64,${buf.toString('base64')}`
+  katexFontDataUriCache.set(fontFileName, dataUri)
+  return dataUri
+}
+
+async function buildKatexCss(targetDir) {
+  const srcCssPath = path.resolve(__dirname, 'src/components/MarkdownRender/mykatex.min.css')
+  const css = await fs.readFile(srcCssPath, 'utf8')
+
+  // Match each `src: ...;` declaration (may span multiple lines/urls) inside @font-face rules
+  const srcRegex = /src:\s*([^;]+);/gs
+  const matches = [...css.matchAll(srcRegex)]
+
+  let output = css
+  // Replace from the end so earlier match indices stay valid as we edit the string
+  for (let i = matches.length - 1; i >= 0; i--) {
+    const match = matches[i]
+    const woff2Match = match[1].match(/url\(\/node_modules\/katex\/dist\/fonts\/([^)]+\.woff2)\)/)
+    if (!woff2Match) continue
+    const dataUri = await getKatexFontDataUri(woff2Match[1])
+    const replacement = `src: url(${dataUri}) format('woff2');`
+    output =
+      output.slice(0, match.index) + replacement + output.slice(match.index + match[0].length)
+  }
+
+  await fs.ensureDir(targetDir)
+  await fs.outputFile(path.join(targetDir, 'katex.css'), output)
+}
+
+// Build the standalone fonts.css asset: the Cairo @font-face rules from src/fonts/styles.css,
+// with each relative woff2 url() inlined as a base64 data URI. Kept out of content-script.css
+// for the same reason as katex.css above (see content-script/styles.scss).
+const cairoFontDataUriCache = new Map()
+async function getCairoFontDataUri(fontFileName) {
+  if (cairoFontDataUriCache.has(fontFileName)) return cairoFontDataUriCache.get(fontFileName)
+  const fontPath = path.resolve(__dirname, 'src/fonts', fontFileName)
+  const buf = await fs.readFile(fontPath)
+  const dataUri = `data:font/woff2;base64,${buf.toString('base64')}`
+  cairoFontDataUriCache.set(fontFileName, dataUri)
+  return dataUri
+}
+
+async function buildFontsCss(targetDir) {
+  const srcCssPath = path.resolve(__dirname, 'src/fonts/styles.css')
+  const css = await fs.readFile(srcCssPath, 'utf8')
+
+  const urlRegex = /url\(([^)/][^)]*\.woff2)\)/g
+  const matches = [...css.matchAll(urlRegex)]
+
+  let output = css
+  for (let i = matches.length - 1; i >= 0; i--) {
+    const match = matches[i]
+    const dataUri = await getCairoFontDataUri(match[1])
+    const replacement = `url(${dataUri})`
+    output =
+      output.slice(0, match.index) + replacement + output.slice(match.index + match[0].length)
+  }
+
+  await fs.ensureDir(targetDir)
+  await fs.outputFile(path.join(targetDir, 'fonts.css'), output)
+}
+
+// Permanent regression guard: content-script.css is injected into every http/https page
+// (including Cloudflare Managed Challenge pages), so it must never bundle KaTeX's @font-face
+// rules — those alter font-fingerprinting and break Cloudflare's challenge flow.
+async function assertNoFontFaceInContentScriptCss(cssPath) {
+  if (!(await fs.pathExists(cssPath))) return
+  const content = await fs.readFile(cssPath, 'utf8')
+  if (content.includes('@font-face')) {
+    throw new Error(
+      `[build] Regression detected: ${cssPath} contains @font-face rules. ` +
+        'content-script.css is injected into every http/https page (including Cloudflare ' +
+        'challenge pages) and must never bundle KaTeX fonts. Check that markdown.jsx does not ' +
+        "statically import 'mykatex.min.css' (fonts must ship via katex.css instead).",
+    )
+  }
+}
+
 async function runWebpack(isWithoutKatex, isWithoutTiktoken, minimal, sourceBuildDir, callback) {
   const shared = [
     'preact',
@@ -376,20 +463,6 @@ async function runWebpack(isWithoutKatex, isWithoutTiktoken, minimal, sourceBuil
           : {},
         minimal
           ? {
-              test: /styles\.scss$/,
-              loader: 'string-replace-loader',
-              options: {
-                multiple: [
-                  {
-                    search: "@import '../fonts/styles.css';",
-                    replace: '',
-                  },
-                ],
-              },
-            }
-          : {},
-        minimal
-          ? {
               test: /index\.mjs$/,
               loader: 'string-replace-loader',
               options: {
@@ -545,7 +618,7 @@ async function ensureDevCssPlaceholders(cssFiles) {
   )
 }
 
-async function finishOutput(outputDirSuffix, sourceBuildDir = outdir) {
+async function finishOutput(outputDirSuffix, sourceBuildDir = outdir, isWithoutKatex = false) {
   const commonFiles = [
     { src: 'src/logo.png', dst: 'logo.png' },
     { src: 'src/rules.json', dst: 'rules.json' },
@@ -590,6 +663,9 @@ async function finishOutput(outputDirSuffix, sourceBuildDir = outdir) {
       ),
     ),
   )
+  if (!isWithoutKatex) await buildKatexCss(chromiumOutputDir)
+  await buildFontsCss(chromiumOutputDir)
+  await assertNoFontFaceInContentScriptCss(path.join(chromiumOutputDir, 'content-script.css'))
   if (isProduction) await zipFolder(chromiumOutputDir)
 
   // firefox
@@ -607,6 +683,9 @@ async function finishOutput(outputDirSuffix, sourceBuildDir = outdir) {
       ),
     ),
   )
+  if (!isWithoutKatex) await buildKatexCss(firefoxOutputDir)
+  await buildFontsCss(firefoxOutputDir)
+  await assertNoFontFaceInContentScriptCss(path.join(firefoxOutputDir, 'content-script.css'))
   if (isProduction) await zipFolder(firefoxOutputDir)
 }
 
@@ -626,7 +705,7 @@ async function build() {
             return
           }
           try {
-            await finishOutput(suffix, tmpDir)
+            await finishOutput(suffix, tmpDir, isWithoutKatex)
             resolve()
           } catch (copyErr) {
             reject(copyErr)

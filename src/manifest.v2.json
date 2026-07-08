@@ -62,7 +62,9 @@
     }
   ],
   "web_accessible_resources": [
-    "logo.png"
+    "logo.png",
+    "katex.css",
+    "fonts.css"
   ],
   "commands": {
     "newChat": {

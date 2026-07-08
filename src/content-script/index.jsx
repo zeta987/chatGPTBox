@@ -17,6 +17,7 @@ import {
   createElementAtPosition,
   cropText,
   endsWithQuestionMark,
+  ensureStylesheet,
   getApiModesStringArrayFromConfig,
   getClientPosition,
   getPossibleElementByQuerySelector,
@@ -955,6 +956,11 @@ async function run() {
     console.debug('[content] Cloudflare challenge page detected, skipping initialization.')
     return
   }
+
+  // Lazily load the Cairo @font-face rules (see content-script/styles.scss for why they aren't
+  // statically bundled into content-script.css). Safe here: we've already confirmed this isn't
+  // a Cloudflare challenge page.
+  ensureStylesheet('chatgptbox-fonts-css', 'fonts.css')
 
   console.log('[content] Script run started.')
   try {
