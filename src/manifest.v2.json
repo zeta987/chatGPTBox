@@ -47,13 +47,18 @@
         "http://*/*",
         "file://*/*"
       ],
+      "exclude_matches": [
+        "*://*/cdn-cgi/*",
+        "*://challenges.cloudflare.com/*"
+      ],
       "js": [
         "shared.js",
         "content-script.js"
       ],
       "css": [
         "content-script.css"
-      ]
+      ],
+      "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [

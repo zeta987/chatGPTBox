@@ -20,6 +20,7 @@ import {
   getApiModesStringArrayFromConfig,
   getClientPosition,
   getPossibleElementByQuerySelector,
+  isCloudflareChallengePage,
 } from '../utils'
 import FloatingToolbar from '../components/FloatingToolbar'
 import Browser from 'webextension-polyfill'
@@ -45,12 +46,30 @@ async function mountComponent(siteName, siteConfig) {
     const userConfig = await getUserConfig()
 
     if (!userConfig.alwaysFloatingSidebar) {
+      const hasSiteConfigQuery =
+        siteConfig &&
+        (siteConfig.sidebarContainerQuery ||
+          siteConfig.appendContainerQuery ||
+          siteConfig.resultsContainerQuery)
+      const hasUserConfigQuery = userConfig.prependQuery || userConfig.appendQuery
+
+      if (!hasSiteConfigQuery && !hasUserConfigQuery) {
+        console.debug(
+          '[content] No container query configured, skipping mountComponent retry loop.',
+        )
+        return
+      }
+
       const retry = 10
       let oldUrl = location.href
       for (let i = 1; i <= retry; i++) {
         console.debug(`[content] mountComponent retry ${i}/${retry} for element detection.`)
         if (location.href !== oldUrl) {
           console.log('[content] URL changed during retry, stopping mountComponent.')
+          return
+        }
+        if (isCloudflareChallengePage()) {
+          console.debug('[content] Cloudflare challenge page detected, stopping mountComponent.')
           return
         }
         const e =
@@ -932,6 +951,11 @@ function ensureChatGptPortListenerRegistered() {
 }
 
 async function run() {
+  if (isCloudflareChallengePage()) {
+    console.debug('[content] Cloudflare challenge page detected, skipping initialization.')
+    return
+  }
+
   console.log('[content] Script run started.')
   try {
     ensureChatGptPortListenerRegistered()
