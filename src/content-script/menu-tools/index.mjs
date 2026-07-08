@@ -59,14 +59,29 @@ export const config = {
   },
   openSidePanel: {
     label: 'Open Side Panel',
-    action: async (fromBackground, tab) => {
+    action: (fromBackground, tab) => {
       console.debug('action is from background', fromBackground)
       if (fromBackground) {
         // eslint-disable-next-line no-undef
-        chrome.sidePanel.open({ windowId: tab.windowId, tabId: tab.id })
-      } else {
-        // side panel is not supported
+        if (typeof chrome === 'undefined' || !chrome.sidePanel?.open) {
+          // sidePanel API is not available in this browser (e.g. Firefox)
+          return Promise.reject(new Error('chrome.sidePanel API is not available'))
+        }
+        // contextMenus.onClicked / commands.onCommand document `tab` as
+        // optional, and even when present the tab may not have an id or
+        // windowId (e.g. clicks outside a normal browser tab). Guard here so
+        // callers do not have to wrap every invocation in try/catch just to
+        // avoid a TypeError from dereferencing tab.windowId / tab.id.
+        if (!tab || tab.windowId == null || tab.id == null) {
+          return Promise.reject(
+            new Error('chrome.sidePanel.open requires a tab with windowId and id'),
+          )
+        }
+        // eslint-disable-next-line no-undef
+        return chrome.sidePanel.open({ windowId: tab.windowId, tabId: tab.id })
       }
+      // side panel is not supported
+      return undefined
     },
   },
   closeAllChats: {

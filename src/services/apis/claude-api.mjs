@@ -5,6 +5,14 @@ import { isEmpty } from 'lodash-es'
 import { getConversationPairs } from '../../utils/get-conversation-pairs.mjs'
 import { getModelValue } from '../../utils/model-name-convert.mjs'
 
+function shouldOmitTemperature(model) {
+  return model === 'claude-opus-4-7' || model === 'claude-opus-4-8' || model === 'claude-sonnet-5'
+}
+
+function shouldDisableDefaultThinking(model) {
+  return model === 'claude-sonnet-5'
+}
+
 /**
  * @param {Runtime.Port} port
  * @param {string} question
@@ -13,7 +21,7 @@ import { getModelValue } from '../../utils/model-name-convert.mjs'
 export async function generateAnswersWithClaudeApi(port, question, session) {
   const { controller, messageListener, disconnectListener } = setAbortController(port)
   const config = await getUserConfig()
-  const apiUrl = config.customClaudeApiUrl
+  const apiUrl = config.customAnthropicApiUrl
   const model = getModelValue(session)
 
   const prompt = getConversationPairs(
@@ -22,16 +30,20 @@ export async function generateAnswersWithClaudeApi(port, question, session) {
   )
   prompt.push({ role: 'user', content: question })
 
-  let answer = ''
   const body = {
     model,
     messages: prompt,
     stream: true,
-    temperature: config.temperature,
+    max_tokens: config.maxResponseTokenLength,
   }
-  if (config.maxResponseTokenLength < 40000) {
-    body.max_tokens = config.maxResponseTokenLength
+  if (shouldDisableDefaultThinking(model)) {
+    body.thinking = { type: 'disabled' }
   }
+  if (!shouldOmitTemperature(model)) {
+    body.temperature = config.temperature
+  }
+
+  let answer = ''
 
   await fetchSSE(`${apiUrl}/v1/messages`, {
     method: 'POST',
@@ -39,7 +51,7 @@ export async function generateAnswersWithClaudeApi(port, question, session) {
     headers: {
       'Content-Type': 'application/json',
       'anthropic-version': '2023-06-01',
-      'x-api-key': config.claudeApiKey,
+      'x-api-key': config.anthropicApiKey,
       'anthropic-dangerous-direct-browser-access': true,
     },
     body: JSON.stringify(body),

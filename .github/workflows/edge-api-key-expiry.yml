@@ -1,0 +1,26 @@
+name: Edge API key expiry reminder
+
+on:
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-edge-api-key-expiry:
+    runs-on: ubuntu-latest
+    env:
+      EDGE_API_KEY_EXPIRES_AT: ${{ secrets.EDGE_API_KEY_EXPIRES_AT }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check Edge API key expiry
+        run: node scripts/check-edge-api-key-expiry.mjs

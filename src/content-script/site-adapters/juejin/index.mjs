@@ -3,22 +3,14 @@ import { cropText } from '../../../utils'
 export default {
   inputQuery: async () => {
     try {
-      const title = document.querySelector(
-        '#juejin > div.view-container > main > div > div.main-area.article-area > article > h1',
-      )?.textContent
-      const description = document.querySelector(
-        '#juejin > div.view-container > main > div > div.main-area.article-area > article > div.article-content',
-      )?.textContent
+      const title = document.querySelector('#juejin .article-title')?.innerText
+      const description = document.querySelector('#juejin #article-root')?.innerText
       if (title && description) {
-        const author = document.querySelector(
-          '#juejin > div.view-container > main > div > div.main-area.article-area > article > div.author-info-block > div > div.author-name > a > span.name',
-        )?.textContent
-        const comments = document.querySelectorAll(
-          'div.content-box > div.comment-main > div.content',
-        )
+        const author = document.querySelector('#juejin .author-block .info-box span')?.innerText
+        const comments = document.querySelectorAll('.comment-list .comment-content')
         let comment = ''
         for (let i = 1; i <= comments.length && i <= 4; i++) {
-          comment += `answer${i}: ${comment[i - 1].textContent}|`
+          comment += `answer${i}: ${comment[i - 1].innerText}|`
         }
         return await cropText(
           `You are an expert content analyst and summarizer. ` +

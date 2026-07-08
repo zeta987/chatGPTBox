@@ -30,12 +30,14 @@ const clamp = (v, min, max) => {
 
 export async function cropText(
   text,
-  maxLength = 4000,
-  startLength = 400,
-  endLength = 300,
+  maxLength = 8000,
+  startLength = 800,
+  endLength = 600,
   tiktoken = true,
 ) {
   const userConfig = await getUserConfig()
+  if (!userConfig.cropText) return text
+
   const k = modelNameToDesc(
     userConfig.apiMode ? apiModeToModelName(userConfig.apiMode) : userConfig.modelName,
     null,
@@ -43,9 +45,9 @@ export async function cropText(
   ).match(/[- (]*([0-9]+)k/)?.[1]
   if (k) {
     maxLength = Number(k) * 1000
-    maxLength -= 100 + clamp(userConfig.maxResponseTokenLength, 1, maxLength - 1000)
+    maxLength -= 100 + clamp(userConfig.maxResponseTokenLength, 1, maxLength - 2000)
   } else {
-    maxLength -= 100 + clamp(userConfig.maxResponseTokenLength, 1, maxLength - 1000)
+    maxLength -= 100 + clamp(userConfig.maxResponseTokenLength, 1, maxLength - 2000)
   }
 
   const splits = text.split(/[,，。?？!！;；]/).map((s) => s.trim())

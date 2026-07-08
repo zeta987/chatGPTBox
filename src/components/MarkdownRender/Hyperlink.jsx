@@ -10,7 +10,8 @@ export function Hyperlink({ href, children }) {
 
   return href.includes('chatgpt.com') ||
     href.includes('claude.ai') ||
-    href.includes('kimi.moonshot.cn') ? (
+    href.includes('kimi.moonshot.cn') ||
+    href.includes('kimi.com') ? (
     <span
       {...linkProperties}
       onClick={() => {

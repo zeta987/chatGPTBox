@@ -44,7 +44,7 @@ export class Claude {
    * @param {function} [options.fetch] - Fetch function
    * @example
    * const claude = new Claude({
-   *   sessionKey: 'sk-ant-sid01-*****',
+   *   sessionKey: 'sk-ant-sid02-*****',
    *   fetch: globalThis.fetch
    * })
    *
@@ -74,8 +74,8 @@ export class Claude {
     if (!sessionKey) {
       throw new Error('Session key required')
     }
-    if (!sessionKey.startsWith('sk-ant-sid01')) {
-      throw new Error('Session key invalid: Must be in the format sk-ant-sid01-*****')
+    if (!/^sk-ant-sid\d+-/.test(sessionKey)) {
+      throw new Error('Session key invalid: Must be in the format sk-ant-sid02-*****')
     }
     if (fetch) {
       this.fetch = fetch
@@ -164,7 +164,7 @@ export class Claude {
     // Can't figure out a way to test this so I'm just assuming it works
     if (!(this.fetch || globalThis.fetch)) {
       throw new Error(
-        `No fetch available in your environment. Use node-18 or later, a modern browser, or add the following code to your project:\n\nimport "isomorphic-fetch";\nconst claude = new Claude({fetch: fetch, sessionKey: "sk-ant-sid01-*****"});`,
+        `No fetch available in your environment. Use node-18 or later, a modern browser, or add the following code to your project:\n\nimport "isomorphic-fetch";\nconst claude = new Claude({fetch: fetch, sessionKey: "sk-ant-sid02-*****"});`,
       )
     }
     if (!this.proxy) {
@@ -298,19 +298,20 @@ export class Claude {
       updated_at,
     })
     await convo.sendMessage(message, params)
-    await this.request(`/api/generate_chat_title`, {
-      headers: {
-        'content-type': 'application/json',
-        cookie: `sessionKey=${this.sessionKey}`,
+    await this.request(
+      `/api/organizations/${this.organizationId}/chat_conversations/${convoID}/title`,
+      {
+        headers: {
+          'content-type': 'application/json',
+          cookie: `sessionKey=${this.sessionKey}`,
+        },
+        body: JSON.stringify({
+          message_content: message,
+          recent_titles: this.recent_conversations.map((i) => i.name),
+        }),
+        method: 'POST',
       },
-      body: JSON.stringify({
-        organization_uuid: this.organizationId,
-        conversation_uuid: convoID,
-        message_content: message,
-        recent_titles: this.recent_conversations.map((i) => i.name),
-      }),
-      method: 'POST',
-    })
+    )
       .then((r) => r.json())
       .catch(errorHandle('startConversation generate_chat_title'))
     return convo

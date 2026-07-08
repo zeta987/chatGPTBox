@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react'
 import PropTypes from 'prop-types'
 import Browser from 'webextension-polyfill'
 import InputBox from '../InputBox'
@@ -7,7 +7,7 @@ import {
   apiModeToModelName,
   createElementAtPosition,
   getApiModesFromConfig,
-  isApiModeSelected,
+  getUniquelySelectedApiModeIndex,
   isFirefox,
   isMobile,
   isSafari,
@@ -37,8 +37,13 @@ import { findLastIndex } from 'lodash-es'
 import { generateAnswersWithBingWebApi } from '../../services/apis/bing-web.mjs'
 import { handlePortError } from '../../services/wrappers.mjs'
 import MarkdownRender from '../MarkdownRender/markdown.jsx'
+import {
+  getApiModeDisplayLabel,
+  getConversationAiName,
+} from '../../popup/sections/api-modes-provider-utils.mjs'
 
 const logo = Browser.runtime.getURL('logo.png')
+const UNMATCHED_API_MODE_VALUE = '__current-session-api-mode__'
 
 class ConversationItemData extends Object {
   /**
@@ -325,6 +330,23 @@ function ConversationCard(props) {
    */
   const [conversationItemData, setConversationItemData] = useState([])
   const config = useConfig()
+  const customOpenAIProviders = Array.isArray(config.customOpenAIProviders)
+    ? config.customOpenAIProviders
+    : []
+  const currentAiName = getConversationAiName(session, t, customOpenAIProviders)
+  const selectedApiModeIndex = useMemo(
+    () => getUniquelySelectedApiModeIndex(apiModes, session, { sessionCompat: true }),
+    [apiModes, session],
+  )
+  const selectedApiModeLabel =
+    selectedApiModeIndex !== -1
+      ? getApiModeDisplayLabel(apiModes[selectedApiModeIndex], t, customOpenAIProviders)
+      : ''
+  const selectedApiModeValue = selectedApiModeLabel
+    ? String(selectedApiModeIndex)
+    : !session.apiMode && session.modelName === 'customModel'
+    ? '-1'
+    : UNMATCHED_API_MODE_VALUE
 
   useLayoutEffect(() => {
     if (session.conversationRecords.length === 0) {
@@ -1075,22 +1097,25 @@ function ConversationCard(props) {
             style={props.notClampSize ? {} : { width: 0, flexGrow: 1 }}
             className="normal-button"
             required
+            value={selectedApiModeValue}
             onChange={(e) => {
+              if (e.target.value === UNMATCHED_API_MODE_VALUE) return
+
               let apiMode = null
               let modelName = 'customModel'
               if (e.target.value !== '-1') {
-                apiMode = apiModes[e.target.value]
+                const selectedApiMode = apiModes[Number(e.target.value)]
+                if (!selectedApiMode) return
+                apiMode = selectedApiMode
                 modelName = apiModeToModelName(apiMode)
               }
               const newSession = {
                 ...session,
                 modelName,
                 apiMode,
-                aiName: modelNameToDesc(
-                  apiMode ? apiModeToModelName(apiMode) : modelName,
-                  t,
-                  config.customModelName,
-                ),
+                aiName: apiMode
+                  ? getApiModeDisplayLabel(apiMode, t, customOpenAIProviders)
+                  : modelNameToDesc(modelName, t, config.customModelName),
               }
               if (config.autoRegenAfterSwitchModel && conversationItemData.length > 0) {
                 setSession(newSession)
@@ -1100,20 +1125,22 @@ function ConversationCard(props) {
               }
             }}
           >
+            {selectedApiModeValue === UNMATCHED_API_MODE_VALUE && (
+              <option value={UNMATCHED_API_MODE_VALUE} disabled>
+                {currentAiName}
+              </option>
+            )}
             {apiModes.map((apiMode, index) => {
-              const modelName = apiModeToModelName(apiMode)
-              const desc = modelNameToDesc(modelName, t, config.customModelName)
+              const desc = getApiModeDisplayLabel(apiMode, t, customOpenAIProviders)
               if (desc) {
                 return (
-                  <option value={index} key={index} selected={isApiModeSelected(apiMode, session)}>
+                  <option value={index} key={index}>
                     {desc}
                   </option>
                 )
               }
             })}
-            <option value={-1} selected={!session.apiMode && session.modelName === 'customModel'}>
-              {t(Models.customModel.desc)}
-            </option>
+            <option value={-1}>{t(Models.customModel.desc)}</option>
           </select>
         </span>
         {props.draggable && !completeDraggable && (
@@ -1278,8 +1305,8 @@ function ConversationCard(props) {
                       <ConversationItem
                         type="answer"
                         content={data.thinkingData.actualContent}
-                        descName={session.aiName}
-                        onRetry={retryFn}
+                        descName={currentAiName}
+                        onRetry={idx === conversationItemData.length - 1 ? retryFn : null}
                       />
                     )
                   }
@@ -1295,8 +1322,8 @@ function ConversationCard(props) {
                       <ConversationItem
                         type="answer"
                         content={data.content}
-                        descName={session.aiName}
-                        onRetry={retryFn}
+                        descName={currentAiName}
+                        onRetry={idx === conversationItemData.length - 1 ? retryFn : null}
                       />
                     )
                   }
@@ -1307,7 +1334,11 @@ function ConversationCard(props) {
               </div>
             )}
             {data.type === 'error' && (
-              <ConversationItem type="error" content={data.content} onRetry={retryFn} />
+              <ConversationItem
+                type="error"
+                content={data.content}
+                onRetry={idx === conversationItemData.length - 1 ? retryFn : null}
+              />
             )}
           </div>
         ))}

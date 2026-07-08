@@ -14,7 +14,7 @@ export default {
       const checkUrlChange = async () => {
         if (location.href !== oldUrl) {
           oldUrl = location.href
-          mountComponent(config.youtube)
+          mountComponent('youtube', config.youtube)
         }
       }
       window.setInterval(checkUrlChange, 500)
@@ -41,7 +41,26 @@ export default {
       let title = docText.substring(docText.indexOf('"title":"') + '"title":"'.length)
       title = title.substring(0, title.indexOf('","'))
 
-      const subtitleResponse = await fetch(subtitleUrl)
+      let potokenSource = performance
+        .getEntriesByType('resource')
+        .filter((a) => a?.name.includes('/api/timedtext?'))
+        .pop()
+      if (!potokenSource) {
+        //TODO use waitUntil function in refactor version
+        await new Promise((r) => setTimeout(r, 500))
+        document.querySelector('button.ytp-subtitles-button.ytp-button').click()
+        await new Promise((r) => setTimeout(r, 100))
+        document.querySelector('button.ytp-subtitles-button.ytp-button').click()
+      }
+      await new Promise((r) => setTimeout(r, 500))
+      potokenSource = performance
+        .getEntriesByType('resource')
+        .filter((a) => a?.name.includes('/api/timedtext?'))
+        .pop()
+      if (!potokenSource) return
+      const potoken = new URL(potokenSource.name).searchParams.get('pot')
+
+      const subtitleResponse = await fetch(`${subtitleUrl}&pot=${potoken}&c=WEB`)
       if (!subtitleResponse.ok) return
       let subtitleData = await subtitleResponse.text()
 

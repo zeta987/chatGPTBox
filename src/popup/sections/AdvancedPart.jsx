@@ -105,13 +105,13 @@ function ApiUrl({ config, updateConfig }) {
         />
       </label>
       <label>
-        {t('Custom Claude API Url')}
+        {t('Custom Anthropic API Url')}
         <input
           type="text"
-          value={config.customClaudeApiUrl}
+          value={config.customAnthropicApiUrl}
           onChange={(e) => {
             const value = e.target.value
-            updateConfig({ customClaudeApiUrl: value })
+            updateConfig({ customAnthropicApiUrl: value })
           }}
         />
       </label>
@@ -148,7 +148,8 @@ function Others({ config, updateConfig }) {
           checked={config.hideContextMenu}
           onChange={async (e) => {
             const checked = e.target.checked
-            await updateConfig({ hideContextMenu: checked })
+            const result = await updateConfig({ hideContextMenu: checked })
+            if (!result?.ok) return
             Browser.runtime.sendMessage({
               type: 'REFRESH_MENU',
             })

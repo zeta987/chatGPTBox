@@ -14,7 +14,7 @@ export default {
         const newPath = getVideoPath()
         if (newPath !== oldPath) {
           oldPath = newPath
-          mountComponent(config.bilibili)
+          mountComponent('bilibili', config.bilibili)
         }
       }
       window.setInterval(checkPathChange, 500)
@@ -37,7 +37,7 @@ export default {
       const title = videoList[p].part
 
       const infoResponse = await fetch(
-        `https://api.bilibili.com/x/player/v2?bvid=${bvid}&cid=${cid}`,
+        `https://api.bilibili.com/x/player/wbi/v2?bvid=${bvid}&cid=${cid}`,
         {
           credentials: 'include',
         },
@@ -51,11 +51,10 @@ export default {
       const subtitleData = await subtitleResponse.json()
       const subtitles = subtitleData.body
 
-      let subtitleContent = ''
-      for (let i = 0; i < subtitles.length; i++) {
-        if (i === subtitles.length - 1) subtitleContent += subtitles[i].content
-        else subtitleContent += subtitles[i].content + ','
-      }
+      const subtitleContent = subtitles
+        .map((s) => s.content)
+        .filter((c) => c != null)
+        .join(',')
 
       return await cropText(
         `You are an expert video summarizer. Create a comprehensive summary of the following Bilibili video in markdown format, ` +
