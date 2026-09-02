@@ -824,67 +824,116 @@ Browser.runtime.onMessage.addListener(async (message, sender) => {
 })
 
 try {
-  Browser.webRequest.onBeforeRequest.addListener(
-    (details) => {
-      try {
-        console.debug('[background] onBeforeRequest triggered for URL:', details.url)
-        if (
-          details.url.includes('/public_key') &&
-          !details.url.includes(defaultConfig.chatgptArkoseReqParams)
-        ) {
-          console.log('[background] Capturing Arkose public_key request:', details.url)
-          let formData = new URLSearchParams()
-          if (details.requestBody?.formData) {
-            for (const k in details.requestBody.formData) {
-              const values = details.requestBody.formData[k]
-              if (Array.isArray(values)) {
-                for (const value of values) {
-                  formData.append(k, value)
+  // The fork's streamlined manifest.json omits the "webRequest" permission, so
+  // Browser.webRequest is undefined on Chromium MV3. Skip the web-mode helpers
+  // (ChatGPT Arkose capture, Bing / Claude header rewrites) instead of throwing,
+  // which previously also prevented the tabs.onUpdated listener below from registering.
+  const webRequest = Browser.webRequest
+  if (webRequest?.onBeforeRequest && webRequest?.onBeforeSendHeaders) {
+    Browser.webRequest.onBeforeRequest.addListener(
+      (details) => {
+        try {
+          console.debug('[background] onBeforeRequest triggered for URL:', details.url)
+          if (
+            details.url.includes('/public_key') &&
+            !details.url.includes(defaultConfig.chatgptArkoseReqParams)
+          ) {
+            console.log('[background] Capturing Arkose public_key request:', details.url)
+            let formData = new URLSearchParams()
+            if (details.requestBody?.formData) {
+              for (const k in details.requestBody.formData) {
+                const values = details.requestBody.formData[k]
+                if (Array.isArray(values)) {
+                  for (const value of values) {
+                    formData.append(k, value)
+                  }
+                } else if (values != null) {
+                  formData.append(k, values)
                 }
-              } else if (values != null) {
-                formData.append(k, values)
               }
             }
-          }
-          const formString =
-            formData.toString() ||
-            (details.requestBody?.raw?.[0]?.bytes
-              ? new TextDecoder('utf-8').decode(new Uint8Array(details.requestBody.raw[0].bytes))
-              : '')
+            const formString =
+              formData.toString() ||
+              (details.requestBody?.raw?.[0]?.bytes
+                ? new TextDecoder('utf-8').decode(new Uint8Array(details.requestBody.raw[0].bytes))
+                : '')
 
-          if (!formString) {
-            console.warn(
-              '[background] Arkose request captured without body; skipping config update.',
-            )
-            return
-          }
+            if (!formString) {
+              console.warn(
+                '[background] Arkose request captured without body; skipping config update.',
+              )
+              return
+            }
 
-          setUserConfig({
-            chatgptArkoseReqUrl: details.url,
-            chatgptArkoseReqForm: formString,
-          })
-            .then(() => {
-              console.log('[background] Arkose req url and form saved successfully.')
+            setUserConfig({
+              chatgptArkoseReqUrl: details.url,
+              chatgptArkoseReqForm: formString,
             })
-            .catch((e) => console.error('[background] Error saving Arkose req url and form:', e))
+              .then(() => {
+                console.log('[background] Arkose req url and form saved successfully.')
+              })
+              .catch((e) => console.error('[background] Error saving Arkose req url and form:', e))
+          }
+        } catch (error) {
+          console.error('[background] Error in onBeforeRequest listener callback:', error, details)
         }
-      } catch (error) {
-        console.error('[background] Error in onBeforeRequest listener callback:', error, details)
-      }
-    },
-    {
-      urls: ['https://*.openai.com/*', 'https://*.chatgpt.com/*'],
-      types: ['xmlhttprequest'],
-    },
-    ['requestBody'],
-  )
+      },
+      {
+        urls: ['https://*.openai.com/*', 'https://*.chatgpt.com/*'],
+        types: ['xmlhttprequest'],
+      },
+      ['requestBody'],
+    )
 
-  Browser.webRequest.onBeforeSendHeaders.addListener(
-    (details) => {
-      try {
-        console.debug('[background] onBeforeSendHeaders triggered for URL:', details.url)
+    Browser.webRequest.onBeforeSendHeaders.addListener(
+      (details) => {
+        try {
+          console.debug('[background] onBeforeSendHeaders triggered for URL:', details.url)
+          const headers = details.requestHeaders
+          let modified = false
+          for (let i = 0; i < headers.length; i++) {
+            const header = headers[i]
+            if (!header || !header.name) {
+              continue
+            }
+            const headerNameLower = header.name.toLowerCase()
+            if (headerNameLower === 'origin') {
+              header.value = 'https://www.bing.com'
+              modified = true
+            } else if (headerNameLower === 'referer') {
+              header.value = 'https://www.bing.com/search?q=Bing+AI&showconv=1&FORM=hpcodx'
+              modified = true
+            }
+          }
+          if (modified) {
+            console.debug(
+              '[background] Modified headers for Bing (names only):',
+              headers.map((header) => header?.name).filter(Boolean),
+            )
+          }
+          return { requestHeaders: headers }
+        } catch (error) {
+          console.error(
+            '[background] Error in onBeforeSendHeaders listener callback:',
+            error,
+            details,
+          )
+          return { requestHeaders: details.requestHeaders }
+        }
+      },
+      {
+        urls: ['wss://sydney.bing.com/*', 'https://www.bing.com/*'],
+        types: ['xmlhttprequest', 'websocket'],
+      },
+      [
+        'requestHeaders',
+        ...(Browser.runtime.getManifest().manifest_version < 3 ? ['blocking'] : []),
+      ],
+    )
+
+    Browser.webRequest.onBeforeSendHeaders.addListener(
+      (details) => {
         const headers = details.requestHeaders
-        let modified = false
         for (let i = 0; i < headers.length; i++) {
           const header = headers[i]
           if (!header || !header.name) {
@@ -892,59 +941,27 @@ try {
           }
           const headerNameLower = header.name.toLowerCase()
           if (headerNameLower === 'origin') {
-            header.value = 'https://www.bing.com'
-            modified = true
+            header.value = 'https://claude.ai'
           } else if (headerNameLower === 'referer') {
-            header.value = 'https://www.bing.com/search?q=Bing+AI&showconv=1&FORM=hpcodx'
-            modified = true
+            header.value = 'https://claude.ai'
           }
         }
-        if (modified) {
-          console.debug(
-            '[background] Modified headers for Bing (names only):',
-            headers.map((header) => header?.name).filter(Boolean),
-          )
-        }
         return { requestHeaders: headers }
-      } catch (error) {
-        console.error(
-          '[background] Error in onBeforeSendHeaders listener callback:',
-          error,
-          details,
-        )
-        return { requestHeaders: details.requestHeaders }
-      }
-    },
-    {
-      urls: ['wss://sydney.bing.com/*', 'https://www.bing.com/*'],
-      types: ['xmlhttprequest', 'websocket'],
-    },
-    ['requestHeaders', ...(Browser.runtime.getManifest().manifest_version < 3 ? ['blocking'] : [])],
-  )
-
-  Browser.webRequest.onBeforeSendHeaders.addListener(
-    (details) => {
-      const headers = details.requestHeaders
-      for (let i = 0; i < headers.length; i++) {
-        const header = headers[i]
-        if (!header || !header.name) {
-          continue
-        }
-        const headerNameLower = header.name.toLowerCase()
-        if (headerNameLower === 'origin') {
-          header.value = 'https://claude.ai'
-        } else if (headerNameLower === 'referer') {
-          header.value = 'https://claude.ai'
-        }
-      }
-      return { requestHeaders: headers }
-    },
-    {
-      urls: ['https://claude.ai/*'],
-      types: ['xmlhttprequest'],
-    },
-    ['requestHeaders', ...(Browser.runtime.getManifest().manifest_version < 3 ? ['blocking'] : [])],
-  )
+      },
+      {
+        urls: ['https://claude.ai/*'],
+        types: ['xmlhttprequest'],
+      },
+      [
+        'requestHeaders',
+        ...(Browser.runtime.getManifest().manifest_version < 3 ? ['blocking'] : []),
+      ],
+    )
+  } else {
+    console.warn(
+      '[background] webRequest API unavailable (manifest lacks the "webRequest" permission); skipping ChatGPT Arkose capture and Bing/Claude web header rewrites.',
+    )
+  }
 
   Browser.tabs.onUpdated.addListener(async (tabId, info, tab) => {
     const outerTryCatchError = (error) => {
