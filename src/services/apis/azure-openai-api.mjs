@@ -4,6 +4,7 @@ import { getConversationPairs } from '../../utils/get-conversation-pairs.mjs'
 import { fetchSSE } from '../../utils/fetch-sse.mjs'
 import { isEmpty } from 'lodash-es'
 import { getModelValue } from '../../utils/model-name-convert.mjs'
+import { getTemperatureParams } from './temperature-params.mjs'
 
 /**
  * @param {Runtime.Port} port
@@ -13,8 +14,8 @@ import { getModelValue } from '../../utils/model-name-convert.mjs'
 export async function generateAnswersWithAzureOpenaiApi(port, question, session) {
   const { controller, messageListener, disconnectListener } = setAbortController(port)
   const config = await getUserConfig()
-  let model = getModelValue(session)
-  if (!model) model = config.azureDeploymentName
+  let deploymentName = getModelValue(session)
+  if (!deploymentName) deploymentName = config.azureDeploymentName
 
   const prompt = getConversationPairs(
     session.conversationRecords.slice(-config.maxConversationContextLength),
@@ -26,7 +27,8 @@ export async function generateAnswersWithAzureOpenaiApi(port, question, session)
   const body = {
     messages: prompt,
     stream: true,
-    temperature: config.temperature,
+    // Azure deployment names are opaque aliases, not canonical model identifiers.
+    ...getTemperatureParams(config),
   }
   if (config.maxResponseTokenLength < 40000) {
     body.max_tokens = config.maxResponseTokenLength
@@ -36,7 +38,7 @@ export async function generateAnswersWithAzureOpenaiApi(port, question, session)
     `${config.azureEndpoint.replace(
       /\/$/,
       '',
-    )}/openai/deployments/${model}/chat/completions?api-version=2024-02-01`,
+    )}/openai/deployments/${deploymentName}/chat/completions?api-version=2024-02-01`,
     {
       method: 'POST',
       signal: controller.signal,
@@ -72,10 +74,15 @@ export async function generateAnswersWithAzureOpenaiApi(port, question, session)
         }
       },
       async onStart() {},
-      async onEnd() {
-        port.postMessage({ done: true })
-        port.onMessage.removeListener(messageListener)
-        port.onDisconnect.removeListener(disconnectListener)
+      async onEnd(aborted) {
+        try {
+          if (!aborted) {
+            port.postMessage({ done: true })
+          }
+        } finally {
+          port.onMessage.removeListener(messageListener)
+          port.onDisconnect.removeListener(disconnectListener)
+        }
       },
       async onError(resp) {
         port.onMessage.removeListener(messageListener)

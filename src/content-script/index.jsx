@@ -32,6 +32,7 @@ import { initSession } from '../services/init-session.mjs'
 import { getChatGptAccessToken, registerPortListener } from '../services/wrappers.mjs'
 import { generateAnswersWithChatgptWebApi } from '../services/apis/chatgpt-web.mjs'
 import WebJumpBackNotification from '../components/WebJumpBackNotification'
+import { getPortErrorMessage, shouldDelegatePortError } from './port-error.mjs'
 
 /**
  * @param {string} siteName
@@ -910,7 +911,7 @@ function ensureChatGptPortListenerRegistered() {
 
   try {
     console.log('[content] Attempting to register port listener for chatgpt.com.')
-    registerPortListener(async (session, port) => {
+    registerPortListener(async (session, port, _config, isLatestSessionRequest) => {
       console.debug(
         `[content] Port listener callback triggered. Session model: ${session?.modelName}, Port: ${port.name}`,
       )
@@ -921,6 +922,10 @@ function ensureChatGptPortListenerRegistered() {
             session.question,
           )
           const accessToken = await getChatGptAccessToken()
+          if (!isLatestSessionRequest()) {
+            console.debug('[content] Skipping a superseded ChatGPT Web session request.')
+            return
+          }
           if (!accessToken) {
             console.warn('[content] No ChatGPT access token available for web API call.')
             port.postMessage({ error: 'Missing ChatGPT access token.' })
@@ -934,10 +939,15 @@ function ensureChatGptPortListenerRegistered() {
           )
         }
       } catch (e) {
+        if (!isLatestSessionRequest()) {
+          console.debug('[content] Ignoring an error from a superseded session request.')
+          return
+        }
+        if (shouldDelegatePortError(e)) throw e
         console.error('[content] Error in port listener callback:', e, 'Session:', session)
         try {
           port.postMessage({
-            error: e.message || 'An unexpected error occurred in content script port listener.',
+            error: getPortErrorMessage(e),
           })
         } catch (postError) {
           console.error('[content] Error sending error message back via port:', postError)

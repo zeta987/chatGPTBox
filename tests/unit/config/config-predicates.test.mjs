@@ -7,8 +7,11 @@ import {
   chatgptApiModelKeys,
   gptApiModelKeys,
   claudeApiModelKeys,
+  mistralApiModelKeys,
   openRouterApiModelKeys,
+  nvidiaNimApiModelKeys,
   aimlApiModelKeys,
+  xaiApiModelKeys,
   isUsingAimlApiModel,
   isUsingAzureOpenAiApiModel,
   isUsingBingWebModel,
@@ -17,17 +20,19 @@ import {
   isUsingChatgptApiModel,
   isUsingClaudeApiModel,
   isUsingCustomModel,
-  isUsingCustomNameOnlyModel,
   isUsingDeepSeekApiModel,
+  isUsingNvidiaNimApiModel,
   isUsingGeminiWebModel,
   isUsingGithubThirdPartyApiModel,
   isUsingMoonshotApiModel,
+  isUsingMistralApiModel,
   isUsingMoonshotWebModel,
   isUsingMultiModeModel,
   isUsingOllamaApiModel,
   isUsingOpenAiApiModel,
   isUsingGptCompletionApiModel,
   isUsingOpenRouterApiModel,
+  isUsingXaiApiModel,
 } from '../../../src/config/index.mjs'
 import {
   LEGACY_MODEL_KEY_MIGRATIONS,
@@ -43,6 +48,10 @@ const representativeChatgptApiModelNames = [
   'chatgptApi5_4Mini',
   'chatgptApi5_4Nano',
   'chatgptApi5_5',
+  'chatgptApi5_6',
+  'chatgptApi5_6Sol',
+  'chatgptApi5_6Terra',
+  'chatgptApi5_6Luna',
 ]
 const representativeGptCompletionApiModelNames = ['gptApiInstruct']
 const representativeClaudeApiModelNames = ['claudeOpus48Api', 'claudeSonnet46Api']
@@ -219,10 +228,24 @@ test('isUsingMoonshotApiModel detects moonshot API models', () => {
   assert.equal(isUsingMoonshotApiModel({ modelName: 'moonshotWebFree' }), false)
 })
 
+test('isUsingMistralApiModel accepts exported Mistral API model keys', () => {
+  for (const modelName of mistralApiModelKeys) {
+    assert.equal(isUsingMistralApiModel({ modelName }), true)
+  }
+  assert.equal(isUsingMistralApiModel({ modelName: 'chatgptApi4oMini' }), false)
+})
+
 test('isUsingDeepSeekApiModel detects DeepSeek models', () => {
   assert.equal(isUsingDeepSeekApiModel({ modelName: 'deepseek_v4_flash' }), true)
   assert.equal(isUsingDeepSeekApiModel({ modelName: 'deepseek_v4_pro' }), true)
   assert.equal(isUsingDeepSeekApiModel({ modelName: 'chatgptApi4oMini' }), false)
+})
+
+test('isUsingNvidiaNimApiModel accepts exported NVIDIA NIM API model keys', () => {
+  for (const modelName of nvidiaNimApiModelKeys) {
+    assert.equal(isUsingNvidiaNimApiModel({ modelName }), true)
+  }
+  assert.equal(isUsingNvidiaNimApiModel({ modelName: 'chatgptApi4oMini' }), false)
 })
 
 test('isUsingOpenRouterApiModel matches representative OpenRouter API keys', () => {
@@ -236,6 +259,13 @@ test('isUsingOpenRouterApiModel accepts exported OpenRouter API model keys', () 
   for (const modelName of openRouterApiModelKeys) {
     assert.equal(isUsingOpenRouterApiModel({ modelName }), true)
   }
+})
+
+test('isUsingXaiApiModel accepts exported xAI API model keys', () => {
+  for (const modelName of xaiApiModelKeys) {
+    assert.equal(isUsingXaiApiModel({ modelName }), true)
+  }
+  assert.equal(isUsingXaiApiModel({ modelName: 'chatgptApi4oMini' }), false)
 })
 
 test('isUsingAimlApiModel matches representative AI/ML API keys', () => {
@@ -279,12 +309,6 @@ test('isUsingAzureOpenAiApiModel detects Azure OpenAI models', () => {
 test('isUsingGithubThirdPartyApiModel detects waylaidwanderer models', () => {
   assert.equal(isUsingGithubThirdPartyApiModel({ modelName: 'waylaidwandererApi' }), true)
   assert.equal(isUsingGithubThirdPartyApiModel({ modelName: 'chatgptApi4oMini' }), false)
-})
-
-test('isUsingCustomNameOnlyModel detects poeAiWebCustom', () => {
-  assert.equal(isUsingCustomNameOnlyModel({ modelName: 'poeAiWebCustom' }), true)
-  assert.equal(isUsingCustomNameOnlyModel({ modelName: 'poeAiWebSage' }), false)
-  assert.equal(isUsingCustomNameOnlyModel({ modelName: 'customModel' }), false)
 })
 
 // ── getPreferredLanguageKey ──────────────────────────────────────────

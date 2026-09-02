@@ -41,6 +41,15 @@ import {
   getApiModeDisplayLabel,
   getConversationAiName,
 } from '../../popup/sections/api-modes-provider-utils.mjs'
+import { getDisplayErrorText } from '../../utils/error-text.mjs'
+import {
+  createConversationPortMessage,
+  finalizeInterruptedSession,
+  getCompletedAnswerUpdate,
+  getInterruptedCompletionState,
+  isSupersededGenerationMessage,
+  isSupersededRequestMessage,
+} from './session.mjs'
 
 const logo = Browser.runtime.getURL('logo.png')
 const UNMATCHED_API_MODE_VALUE = '__current-session-api-mode__'
@@ -321,6 +330,11 @@ function ConversationCard(props) {
   const [session, setSession] = useState(props.session)
   const windowSize = useClampWindowSize([750, 1500], [250, 1100])
   const bodyRef = useRef(null)
+  const replacedPortRef = useRef(null)
+  const partialAnswerRef = useRef('')
+  const retryRecordRef = useRef(null)
+  const retryGenerationIdRef = useRef(0)
+  const requestGenerationIdRef = useRef(0)
   const [completeDraggable, setCompleteDraggable] = useState(false)
   const useForegroundFetch = isUsingBingWebModel(session)
   const [apiModes, setApiModes] = useState([])
@@ -345,8 +359,8 @@ function ConversationCard(props) {
   const selectedApiModeValue = selectedApiModeLabel
     ? String(selectedApiModeIndex)
     : !session.apiMode && session.modelName === 'customModel'
-    ? '-1'
-    : UNMATCHED_API_MODE_VALUE
+      ? '-1'
+      : UNMATCHED_API_MODE_VALUE
 
   useLayoutEffect(() => {
     if (session.conversationRecords.length === 0) {
@@ -411,7 +425,7 @@ function ConversationCard(props) {
 
   useEffect(() => {
     if (props.onUpdate) props.onUpdate(port, session, conversationItemData)
-  }, [session, conversationItemData])
+  }, [port, session, conversationItemData])
 
   useEffect(() => {
     const { offsetHeight, scrollHeight, scrollTop } = bodyRef.current
@@ -435,6 +449,8 @@ function ConversationCard(props) {
         question: props.question,
         updatedAt: new Date().toISOString(),
       }
+      partialAnswerRef.current = ''
+      retryRecordRef.current = null
       setSession(newSession)
       await postMessage({ session: newSession })
     }
@@ -522,21 +538,65 @@ function ConversationCard(props) {
     })
   }
 
+  /**
+   * 統一錯誤處理邏輯：最後一個答案/錯誤項目若是加載中或錯誤就直接替換，否則附加新的錯誤項目。
+   * 使用函數式更新以避免讀到過期的 conversationItemData。
+   * @param {string} errorMessage
+   */
+  const applyErrorItem = (errorMessage) => {
+    setConversationItemData((currentItems) => {
+      const lastItemIndex = findLastIndex(
+        currentItems,
+        (v) => v.type === 'answer' || v.type === 'error',
+      )
+      if (
+        lastItemIndex !== -1 &&
+        (currentItems[lastItemIndex].content.includes('gpt-loading') ||
+          currentItems[lastItemIndex].type === 'error')
+      ) {
+        const updatedItems = [...currentItems]
+        updatedItems[lastItemIndex] = new ConversationItemData(
+          'error',
+          errorMessage,
+          true,
+          currentItems[lastItemIndex].thinkingData,
+        )
+        return updatedItems
+      }
+      return [...currentItems, new ConversationItemData('error', errorMessage, true)]
+    })
+  }
+
   const portMessageListener = (msg) => {
+    if (isSupersededRequestMessage(msg, requestGenerationIdRef.current)) return
+    if (isSupersededGenerationMessage(msg, retryGenerationIdRef.current)) return
+
     if (msg.answer) {
+      partialAnswerRef.current = msg.answer
       updateAnswer(msg.answer, false, 'answer')
     }
     if (msg.session) {
-      if (msg.done) msg.session = { ...msg.session, isRetry: false }
-      setSession(msg.session)
+      setSession(msg.done ? { ...msg.session, isRetry: false } : msg.session)
     }
     if (msg.done) {
-      updateAnswer('', true, 'answer', true)
+      const partialAnswer = partialAnswerRef.current
+      const retryRecord = retryRecordRef.current
+      const completionState = getInterruptedCompletionState(msg, partialAnswer, retryRecord)
+      if (completionState.shouldFinalize) {
+        setSession((currentSession) =>
+          finalizeInterruptedSession(currentSession, partialAnswer, retryRecord),
+        )
+      }
+      partialAnswerRef.current = ''
+      retryRecordRef.current = null
+      const answerUpdate = getCompletedAnswerUpdate(completionState.restoredRetryAnswer)
+      updateAnswer(answerUpdate.value, answerUpdate.appended, 'answer', true)
       setIsReady(true)
     }
     if (msg.error) {
       let formattedError = msg.error
-
+      const retryRecord = retryRecordRef.current
+      setSession((currentSession) => finalizeInterruptedSession(currentSession, '', retryRecord))
       switch (msg.error) {
         case 'UNAUTHORIZED':
           formattedError =
@@ -568,29 +628,9 @@ function ConversationCard(props) {
           break
       }
 
-      // 統一錯誤處理邏輯
-      const errorMessage = t(formattedError)
-
-      // 查找最後一個答案或錯誤項目
-      const lastItemIndex = findLastIndex(
-        conversationItemData,
-        (v) => v.type === 'answer' || v.type === 'error',
-      )
-
-      if (
-        lastItemIndex !== -1 &&
-        (conversationItemData[lastItemIndex].content.includes('gpt-loading') ||
-          conversationItemData[lastItemIndex].type === 'error')
-      ) {
-        // 如果最後一項是加載中或錯誤，直接替換
-        updateAnswer(errorMessage, false, 'error', true)
-      } else {
-        // 否則添加新的錯誤項目
-        setConversationItemData((old) => [
-          ...old,
-          new ConversationItemData('error', errorMessage, true),
-        ])
-      }
+      applyErrorItem(getDisplayErrorText(formattedError, t))
+      partialAnswerRef.current = ''
+      retryRecordRef.current = null
       setIsReady(true)
     }
   }
@@ -600,24 +640,26 @@ function ConversationCard(props) {
   /**
    * @param {Session|undefined} session
    * @param {boolean|undefined} stop
+   * @param {number|undefined} stopGenerationId
    */
-  const postMessage = async ({ session, stop }) => {
+  const postMessage = async ({ session, stop, stopGenerationId }) => {
+    const requestGenerationId = session ? ++requestGenerationIdRef.current : undefined
     if (useForegroundFetch) {
-      foregroundMessageListeners.current.forEach((listener) => listener({ session, stop }))
+      foregroundMessageListeners.current.forEach((listener) =>
+        listener({ session, stop, stopGenerationId, requestGenerationId }),
+      )
       if (session) {
         const fakePort = {
           postMessage: (msg) => {
-            portMessageListener(msg)
+            portMessageListener({ ...msg, requestGenerationId })
           },
           onMessage: {
             addListener: (listener) => {
               foregroundMessageListeners.current.push(listener)
             },
             removeListener: (listener) => {
-              foregroundMessageListeners.current.splice(
-                foregroundMessageListeners.current.indexOf(listener),
-                1,
-              )
+              const index = foregroundMessageListeners.current.indexOf(listener)
+              if (index !== -1) foregroundMessageListeners.current.splice(index, 1)
             },
           },
           onDisconnect: {
@@ -637,16 +679,27 @@ function ConversationCard(props) {
             )
           else await generateAnswersWithBingWebApi(fakePort, session.question, session, bingToken)
         } catch (err) {
-          handlePortError(session, fakePort, err)
+          handlePortError(session, fakePort, err, t)
         }
       }
     } else {
-      port.postMessage({ session, stop })
+      port.postMessage(
+        createConversationPortMessage({
+          session,
+          stop,
+          stopGenerationId,
+          requestGenerationId,
+        }),
+      )
     }
   }
 
   useEffect(() => {
     const portListener = () => {
+      if (replacedPortRef.current === port) {
+        replacedPortRef.current = null
+        return
+      }
       setPort(Browser.runtime.connect())
       setIsReady(true)
     }
@@ -692,7 +745,7 @@ function ConversationCard(props) {
         }
       }
     }
-  }, [port])
+  }, [port, conversationItemData])
 
   const isRetryingRef = useRef(false) // 防止重複重試的標誌
 
@@ -779,10 +832,19 @@ function ConversationCard(props) {
       setSession(sessionForRequest)
 
       try {
-        await postMessage({ stop: true })
+        partialAnswerRef.current = ''
+        retryRecordRef.current = null
+        if (!isReady) {
+          // 讓仍在串流中的舊請求訊息被視為過期，避免覆蓋新的重試結果
+          ++requestGenerationIdRef.current
+          const stopGenerationId = ++retryGenerationIdRef.current
+          await postMessage({ stop: true, stopGenerationId })
+        }
         await postMessage({ session: sessionForRequest })
       } catch (e) {
+        partialAnswerRef.current = ''
         updateAnswer(e, false, 'error')
+        setIsReady(true)
       }
     } finally {
       // 重置標誌，允許下次重試
@@ -790,11 +852,14 @@ function ConversationCard(props) {
         isRetryingRef.current = false
       }, 1000) // 1秒後允許再次重試
     }
-  }, [session, t, updateAnswer, setIsReady, setSession, postMessage])
+  }, [session, isReady, t, updateAnswer, setIsReady, setSession, postMessage])
 
   // 修改訊息處理邏輯
   const handleMessage = (msg) => {
     console.debug('received message', msg)
+    // 忽略已被新請求 / 停止操作取代的過期訊息（避免 Stop 後 UI 卡住）
+    if (isSupersededRequestMessage(msg, requestGenerationIdRef.current)) return
+    if (isSupersededGenerationMessage(msg, retryGenerationIdRef.current)) return
     if (isReady && msg?.question) setIsReady(false)
 
     // 處理新的訊息類型
@@ -825,6 +890,7 @@ function ConversationCard(props) {
         // Ensure hasReasoning is true if there's reasoningContent, otherwise preserve existing or default to false
         hasReasoning: !!msg.reasoningContent,
       })
+      partialAnswerRef.current = msg.actualContent || ''
       // 如果有實際內容，更新顯示的答案內容
       if (msg.actualContent && msg.actualContent.trim()) {
         updateAnswer(msg.actualContent, false, 'answer', msg.done)
@@ -834,6 +900,7 @@ function ConversationCard(props) {
 
     // 處理傳統格式的訊息
     if (msg?.answer) {
+      partialAnswerRef.current = msg.answer
       updateAnswer(msg.answer, false, 'answer', msg.done)
     }
 
@@ -844,6 +911,8 @@ function ConversationCard(props) {
 
     // 處理錯誤訊息
     if (msg?.error) {
+      const retryRecord = retryRecordRef.current
+      setSession((currentSession) => finalizeInterruptedSession(currentSession, '', retryRecord))
       let formattedError = msg.error
       if (typeof msg.error === 'string' && msg.error.trimStart().startsWith('{'))
         try {
@@ -852,35 +921,27 @@ function ConversationCard(props) {
           /* empty */
         }
 
-      // 統一錯誤處理邏輯
-      const errorMessage = t(formattedError)
-
-      // 查找最後一個答案或錯誤項目
-      const lastItemIndex = findLastIndex(
-        conversationItemData,
-        (v) => v.type === 'answer' || v.type === 'error',
-      )
-
-      if (
-        lastItemIndex !== -1 &&
-        (conversationItemData[lastItemIndex].content.includes('gpt-loading') ||
-          conversationItemData[lastItemIndex].type === 'error')
-      ) {
-        // 如果最後一項是加載中或錯誤，直接替換
-        updateAnswer(errorMessage, false, 'error', true)
-      } else {
-        // 否則添加新的錯誤項目
-        setConversationItemData((old) => [
-          ...old,
-          new ConversationItemData('error', errorMessage, true),
-        ])
-      }
+      applyErrorItem(getDisplayErrorText(formattedError, t))
+      partialAnswerRef.current = ''
+      retryRecordRef.current = null
       // 錯誤發生時必須設置 isReady 為 true，讓用戶可以重試或發送新消息
       setIsReady(true)
     }
 
-    // 統一處理 done 狀態
+    // 統一處理 done 狀態（含 proxy 斷線 / 被中斷時的 session 收尾）
     if (msg.done) {
+      const partialAnswer = partialAnswerRef.current
+      const retryRecord = retryRecordRef.current
+      const completionState = getInterruptedCompletionState(msg, partialAnswer, retryRecord)
+      if (completionState.shouldFinalize) {
+        setSession((currentSession) =>
+          finalizeInterruptedSession(currentSession, partialAnswer, retryRecord),
+        )
+      }
+      partialAnswerRef.current = ''
+      retryRecordRef.current = null
+      const answerUpdate = getCompletedAnswerUpdate(completionState.restoredRetryAnswer)
+      updateAnswer(answerUpdate.value, answerUpdate.appended, 'answer', true)
       setIsReady(true)
     }
   }
@@ -1191,7 +1252,23 @@ function ConversationCard(props) {
             size={16}
             text={t('Clear Conversation')}
             onConfirm={async () => {
-              await postMessage({ stop: true })
+              ++requestGenerationIdRef.current
+              const stopGenerationId = ++retryGenerationIdRef.current
+              try {
+                await postMessage({ stop: true, stopGenerationId })
+              } catch (error) {
+                console.warn(
+                  '[ConversationCard] Failed to stop generation before clearing conversation:',
+                  error,
+                )
+              }
+              if (!useForegroundFetch) {
+                replacedPortRef.current = port
+                port.disconnect()
+                setPort(Browser.runtime.connect())
+              }
+              partialAnswerRef.current = ''
+              retryRecordRef.current = null
               Browser.runtime.sendMessage({
                 type: 'DELETE_CONVERSATION',
                 data: {
@@ -1206,6 +1283,7 @@ function ConversationCard(props) {
               })
               newSession.sessionId = session.sessionId
               setSession(newSession)
+              setIsReady(true)
             }}
           />
           {!props.pageMode && (
@@ -1271,7 +1349,7 @@ function ConversationCard(props) {
         className="markdown-body"
         style={
           props.notClampSize
-            ? { flexGrow: 1 }
+            ? { flexGrow: 1, minHeight: 0 }
             : { maxHeight: windowSize[1] * 0.55 + 'px', resize: 'vertical' }
         }
       >
@@ -1373,6 +1451,8 @@ function ConversationCard(props) {
               'answer',
               `<p class="gpt-loading">${t('Waiting for response...')}</p>`,
             )
+            partialAnswerRef.current = ''
+            retryRecordRef.current = null
             setConversationItemData([...conversationItemData, newQuestion, newAnswer])
             setIsReady(false)
 

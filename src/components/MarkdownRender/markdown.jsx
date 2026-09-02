@@ -202,6 +202,7 @@ export function MarkdownRender(props) {
             {
               detect: true,
               ignoreMissing: true,
+              plainText: ['diagnostic'],
             },
           ],
         ]}
