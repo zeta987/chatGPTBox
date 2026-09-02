@@ -359,8 +359,8 @@ function ConversationCard(props) {
   const selectedApiModeValue = selectedApiModeLabel
     ? String(selectedApiModeIndex)
     : !session.apiMode && session.modelName === 'customModel'
-      ? '-1'
-      : UNMATCHED_API_MODE_VALUE
+    ? '-1'
+    : UNMATCHED_API_MODE_VALUE
 
   useLayoutEffect(() => {
     if (session.conversationRecords.length === 0) {
